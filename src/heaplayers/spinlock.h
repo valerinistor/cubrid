@@ -172,6 +172,8 @@ private:
     Sleep(0);
 #elif defined(__SVR4)
     thr_yield();
+#elif defined(__ARM_ARCH)
+    return;
 #else
     sched_yield();
 #endif
@@ -237,13 +239,15 @@ HL::SpinLockType::MyInterlockedExchange (unsigned long * oldval,
                 : "r"(oldval), "r"(newval) 
                 : "cr0", "memory"); 
   return ret;
-
-#elif defined(__arm__)
+#elif defined(__aarch64__)
+  *oldval = newval;
+  return newval;
+#elif defined(__arm__) || defined(__ARM_ARCH)
   // Contributed by Bo Granlund.
   long result;
   asm volatile (
 		       "\n\t"
-		       "swp     %0,%2,[%1] \n\t"
+		       "swpb     %0,%2,[%1] \n\t"
 		       ""
 		       : "=&r"(result)
 		       : "r"(oldval), "r"(newval)

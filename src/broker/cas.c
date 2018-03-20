@@ -789,7 +789,8 @@ cas_main (void)
   char do_not_use_driver_info[SRV_CON_CLIENT_INFO_SIZE];
 #endif /* WINDOWS */
   int client_ip_addr;
-  char cas_info[CAS_INFO_SIZE] = { CAS_INFO_STATUS_INACTIVE,
+  signed char cas_info[CAS_INFO_SIZE] = {
+    CAS_INFO_STATUS_INACTIVE,
     CAS_INFO_RESERVED_DEFAULT,
     CAS_INFO_RESERVED_DEFAULT,
     CAS_INFO_RESERVED_DEFAULT
@@ -1002,7 +1003,7 @@ cas_main (void)
 	if (net_read_stream (client_sock_fd, read_buf, db_info_size) < 0)
 	  {
 	    cas_info[CAS_INFO_STATUS] = CAS_INFO_STATUS_INACTIVE;
-	    net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, cas_info, cas_info_size,
+	    net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, (char *) cas_info, cas_info_size,
 			     CAS_ERROR_INDICATOR, CAS_ER_COMMUNICATION, NULL);
 	  }
 	else
@@ -1024,7 +1025,7 @@ cas_main (void)
 
 		net_write_int (client_sock_fd, 0);
 		cas_info[CAS_INFO_STATUS] = CAS_INFO_STATUS_ACTIVE;
-		net_write_stream (client_sock_fd, cas_info, cas_info_size);
+		net_write_stream (client_sock_fd, (char *) cas_info, cas_info_size);
 		CLOSE_SOCKET (client_sock_fd);
 
 		goto finish_cas;
@@ -1129,7 +1130,7 @@ cas_main (void)
 		    sprintf (err_msg, "Authorization error.(Address is rejected)");
 
 		    cas_info[CAS_INFO_STATUS] = CAS_INFO_STATUS_INACTIVE;
-		    net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, cas_info,
+		    net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, (char *) cas_info,
 				     cas_info_size, DBMS_ERROR_INDICATOR, CAS_ER_NOT_AUTHORIZED_CLIENT, err_msg);
 
 		    set_hang_check_time ();
@@ -1156,7 +1157,7 @@ cas_main (void)
 		char msg_buf[LINE_MAX];
 
 		cas_info[CAS_INFO_STATUS] = CAS_INFO_STATUS_INACTIVE;
-		net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, cas_info, cas_info_size,
+		net_write_error (client_sock_fd, req_info.client_version, req_info.driver_info, (char *) cas_info, cas_info_size,
 				 err_info.err_indicator, err_info.err_number, db_err_msg);
 
 		if (db_err_msg == NULL)
@@ -1221,7 +1222,7 @@ cas_main (void)
 
 	    cas_info[CAS_INFO_STATUS] = CAS_INFO_STATUS_ACTIVE;
 	    /* todo: casting T_BROKER_VERSION to T_CAS_PROTOCOL */
-	    cas_send_connect_reply_to_driver ((T_CAS_PROTOCOL) req_info.client_version, client_sock_fd, cas_info);
+	    cas_send_connect_reply_to_driver ((T_CAS_PROTOCOL) req_info.client_version, client_sock_fd, (char *) cas_info);
 
 	    as_info->cci_default_autocommit = shm_appl->cci_default_autocommit;
 	    req_info.need_rollback = TRUE;

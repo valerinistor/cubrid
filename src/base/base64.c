@@ -62,7 +62,7 @@ const char *base64_map = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "abcdefghijklmnopqrstuvwxy
  *  -1 means  invalid character
  *   positive values mean valid character
  */
-const char from_base64_table[] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -2, -2, -2, -2, -1, -1, -1, -1,
+const signed char from_base64_table[] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -2, -2, -2, -2, -1, -1, -1, -1,
   -1,
   -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
   /* !"#$%&'()*+,-./ */

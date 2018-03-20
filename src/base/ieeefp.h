@@ -25,6 +25,14 @@
 #define __IEEE_LITTLE_ENDIAN
 #endif
 
+#if defined(__ARM_ARCH)
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define __IEEE_LITTLE_ENDIAN
+#else
+#define __IEEE_BIG_ENDIAN
+#endif
+#endif
+
 #if defined(__arm__) || defined(__thumb__)
 /* ARM traditionally used big-endian words; and within those words the
    byte ordering was big or little endian depending upon the target.  

@@ -295,7 +295,7 @@ load_ducet (const char *file_path, const int sett_contr_policy)
       char *s, *save;
       int codenum;
       bool is_variable = false;
-      char is_ignorable[4] = { -1, -1, -1, -1 };
+      signed char is_ignorable[4] = { -1, -1, -1, -1 };
       UCA_COLL_CE_LIST *ce_list = NULL;
       UCA_CP cp_list[LOC_MAX_UCA_CHARS_SEQ];
       uint32 cp_int_list[LOC_MAX_UCA_CHARS_SEQ];

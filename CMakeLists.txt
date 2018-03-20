@@ -772,7 +772,7 @@ if(WITH_LIBREGEX STREQUAL "BUNDLED")
     set(LIBREGEX_TARGET libregex)
     externalproject_add(${LIBREGEX_TARGET}
       SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/libregex38a
-      CONFIGURE_COMMAND ${DEFAULT_CONFIGURE_OPTS}
+      CONFIGURE_COMMAND ${DEFAULT_CONFIGURE_OPTS} --build=aarch64-unknown-linux-gnu --host=aarch64-unknown-linux-gnu
       BUILD_COMMAND make all AUTOCONF=: AUTOHEADER=: AUTOMAKE=: ACLOCAL=:
       INSTALL_COMMAND make install AUTOCONF=: AUTOHEADER=: AUTOMAKE=: ACLOCAL=:
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/external/lib
@@ -799,7 +799,7 @@ if(WITH_LIBEXPAT STREQUAL "BUNDLED")
     set(LIBEXPAT_TARGET libexpat)
     externalproject_add(${LIBEXPAT_TARGET}
       SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/expat-2.0.1
-      CONFIGURE_COMMAND ${DEFAULT_CONFIGURE_OPTS}
+      CONFIGURE_COMMAND ${DEFAULT_CONFIGURE_OPTS} --build=aarch64-unknown-linux-gnu --host=aarch64-unknown-linux-gnu
       BUILD_COMMAND make buildlib AUTOCONF=: AUTOHEADER=: AUTOMAKE=: ACLOCAL=:
       INSTALL_COMMAND make installlib AUTOCONF=: AUTOHEADER=: AUTOMAKE=: ACLOCAL=:
       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/external/lib

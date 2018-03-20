@@ -245,15 +245,55 @@ elapsed (ticks t1, ticks t0)
 /*
  * X86-64 cycle counter
  */
-#if (defined(__GNUC__) || defined(__ICC) || defined(__SUNPRO_C)) && defined(__x86_64__)  && !defined(HAVE_TICK_COUNTER)
+#if (defined(__GNUC__) || defined(__ICC) || defined(__SUNPRO_C)) && (defined(__x86_64__) || defined(__aarch64__)) && !defined(HAVE_TICK_COUNTER)
 typedef unsigned long long ticks;
 
 static __inline__ ticks
 getticks (void)
 {
+#if defined(__x86_64__) || defined(__amd64__)
   unsigned a, d;
   asm volatile ("rdtsc":"=a" (a), "=d" (d));
   return ((ticks) a) | (((ticks) d) << 32);
+#elif defined(__aarch64__)
+    // System timer of ARMv8 runs at a different frequency than the CPU's.
+  // The frequency is fixed, typically in the range 1-50MHz.  It can be
+  // read at CNTFRQ special register.  We assume the OS has set up
+  // the virtual timer properly.
+  ticks virtual_timer_value;
+  asm volatile("mrs %0, cntvct_el0" : "=r"(virtual_timer_value));
+  return virtual_timer_value;
+#elif defined(__ARM_ARCH)
+    #if (__ARM_ARCH >= 6)  // V6 is the earliest arch that has a standard cyclecount
+  uint32_t pmccntr;
+  uint32_t pmuseren;
+  uint32_t pmcntenset;
+  // Read the user mode perf monitor counter access permissions.
+  asm volatile("mrc p15, 0, %0, c9, c14, 0" : "=r"(pmuseren));
+  if (pmuseren & 1) {  // Allows reading perfmon counters for user mode code.
+    asm volatile("mrc p15, 0, %0, c9, c12, 1" : "=r"(pmcntenset));
+    if (pmcntenset & 0x80000000ul) {  // Is it counting?
+      asm volatile("mrc p15, 0, %0, c9, c13, 0" : "=r"(pmccntr));
+      // The counter is set up to count every 64th cycle
+      return static_cast<ticks>(pmccntr) * 64;  // Should optimize to << 6
+    }
+  }
+#endif
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  return static_cast<ticks>(tv.tv_sec) * 1000000 + tv.tv_usec;
+#elif defined(__mips__)
+    // mips apparently only allows rdtsc for superusers, so we fall
+  // back to gettimeofday.  It's possible clock_gettime would be better.
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  return static_cast<ticks>(tv.tv_sec) * 1000000 + tv.tv_usec;
+#else
+// The soft failover to a generic implementation is automatic only for ARM.
+// For other platforms the developer is expected to make an attempt to create
+// a fast implementation and use generic version if nothing better is available.
+#error You need to define CycleTimer for your OS and CPU
+#endif
 }
 
 INLINE_ELAPSED (__inline__)
