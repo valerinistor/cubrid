@@ -24,6 +24,7 @@
 #ifndef _HEARTBEAT_CLUSTER_HPP_
 #define _HEARTBEAT_CLUSTER_HPP_
 
+#include "packable_object.hpp"
 #include "porting.h"
 #include "system_parameter.h"
 
@@ -68,8 +69,19 @@ namespace cubhb
       std::string m_hostname;
   };
 
+  enum node_state
+  {
+    UNKNOWN = 0,
+    SLAVE = 1,
+    TO_BE_MASTER = 2,
+    TO_BE_SLAVE = 3,
+    MASTER = 4,
+    REPLICA = 5,
+    MAX
+  };
+
   /* heartbeat node entries */
-  class node_entry
+  class node_entry : public cubpacking::packable_object
   {
     public:
       using priority_type = unsigned short;
@@ -87,16 +99,9 @@ namespace cubhb
 
       const hostname_type &get_hostname () const;
 
-      enum node_state
-      {
-	UNKNOWN = 0,
-	SLAVE = 1,
-	TO_BE_MASTER = 2,
-	TO_BE_SLAVE = 3,
-	MASTER = 4,
-	REPLICA = 5,
-	MAX
-      };
+      size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
+      void pack (cubpacking::packer &serializator) const override;
+      void unpack (cubpacking::unpacker &deserializator) override;
 
     public: // TODO CBRD-22864 members should be private
       hostname_type hostname;
@@ -138,7 +143,8 @@ namespace cubhb
   class ui_node
   {
     public:
-      explicit ui_node (const std::string &hostname, const std::string &group_id, const sockaddr_in &sockaddr, int v_result);
+      explicit ui_node (const hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr,
+			int v_result);
       ~ui_node () = default;
 
       void set_last_recv_time_to_now ();
@@ -169,13 +175,17 @@ namespace cubhb
       int listen ();
       void stop ();
 
+      const hostname_type &get_hostname () const;
+      const node_state &get_state () const;
+      const std::string &get_group_id () const;
+
       node_entry *find_node (const hostname_type &node_hostname) const;
 
       void remove_ui_node (ui_node *&node);
       void cleanup_ui_nodes ();
-      ui_node *find_ui_node (const std::string &node_hostname, const std::string &node_group_id,
+      ui_node *find_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
 			     const sockaddr_in &sockaddr) const;
-      ui_node *insert_ui_node (const std::string &node_hostname, const std::string &node_group_id,
+      ui_node *insert_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
 			       const sockaddr_in &sockaddr, const int v_result);
 
       bool check_valid_ping_host ();
@@ -183,6 +193,7 @@ namespace cubhb
     private:
       void get_config_node_list (PARAM_ID prm_id, std::string &group, std::vector<std::string> &hostnames) const;
 
+      int init_state ();
       int init_nodes ();
       int init_replica_nodes ();
       void init_ping_hosts ();
@@ -194,7 +205,7 @@ namespace cubhb
 
       SOCKET sfd;
 
-      node_entry::node_state state;
+      node_state state;
       std::string group_id;
       hostname_type hostname;
 
@@ -212,6 +223,41 @@ namespace cubhb
       std::list<ping_host> ping_hosts;
   };
 
+
+
+  enum cluster_message
+  {
+    MSG_UNKNOWN = 0,
+    HEARTBEAT = 1,
+    MSG_MAX
+  };
+
+  class header : public cubpacking::packable_object
+  {
+    public:
+      header ();
+      header (cluster_message type, bool is_request, const hostname_type &dest_hostname, const cluster &c);
+
+      const cluster_message &get_type () const;
+      const bool &is_request () const;
+      const node_state &get_state () const;
+      const std::string &get_group_id () const;
+      const hostname_type &get_orig_hostname () const;
+      const hostname_type &get_dest_hostname () const;
+
+      size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
+      void pack (cubpacking::packer &serializator) const override;
+      void unpack (cubpacking::unpacker &deserializator) override;
+
+    private:
+      cluster_message m_type;
+      bool m_is_request;
+
+      node_state m_state;
+      std::string m_group_id;
+      hostname_type m_orig_hostname;
+      hostname_type m_dest_hostname;
+  };
 } // namespace cubhb
 
 #endif /* _HEARTBEAT_CLUSTER_HPP_ */

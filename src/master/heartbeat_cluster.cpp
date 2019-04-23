@@ -198,6 +198,39 @@ namespace cubhb
     return hostname;
   }
 
+  size_t
+  node_entry::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
+  {
+    size_t size = serializator.get_packed_string_size (hostname.as_str (), start_offset);
+    size += serializator.get_packed_short_size (size);
+    size += serializator.get_packed_int_size (size);
+    return size;
+  }
+
+  void
+  node_entry::pack (cubpacking::packer &serializator) const
+  {
+    serializator.pack_string (hostname.as_str ());
+    serializator.pack_short (priority);
+    serializator.pack_int ((int) state);
+  }
+
+  void
+  node_entry::unpack (cubpacking::unpacker &deserializator)
+  {
+    std::string unpacked_hostname;
+    deserializator.unpack_string (unpacked_hostname);
+    hostname = unpacked_hostname;
+
+    short unpacked_priority;
+    deserializator.unpack_short (unpacked_priority);
+    priority = unpacked_priority;
+
+    int unpacked_state;
+    deserializator.unpack_int (unpacked_state);
+    state = (node_state) unpacked_state;
+  }
+
   ping_host::ping_host (const std::string &hostname)
     : hostname (hostname)
     , result (ping_result::UNKNOWN)
@@ -223,7 +256,7 @@ namespace cubhb
     return hostname;
   }
 
-  ui_node::ui_node (const std::string &hostname, const std::string &group_id, const sockaddr_in &sockaddr, int v_result)
+  ui_node::ui_node (const hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr, int v_result)
     : hostname (hostname)
     , group_id (group_id)
     , saddr ()
@@ -248,7 +281,7 @@ namespace cubhb
   cluster::cluster ()
     : lock ()
     , sfd (INVALID_SOCKET)
-    , state (node_entry::UNKNOWN)
+    , state (node_state ::UNKNOWN)
     , group_id ()
     , hostname ()
     , nodes ()
@@ -323,13 +356,10 @@ namespace cubhb
     hostname = hostname_cstr;
     is_ping_check_enabled = true;
 
-    if (HA_GET_MODE () == HA_MODE_REPLICA)
+    error_code = init_state ();
+    if (error_code != NO_ERROR)
       {
-	state = node_entry::node_state::REPLICA;
-      }
-    else
-      {
-	state = node_entry::node_state::SLAVE;
+	return error_code;
       }
 
     error_code = init_nodes ();
@@ -338,7 +368,7 @@ namespace cubhb
 	return error_code;
       }
 
-    if (state == node_entry::node_state::REPLICA && myself != NULL)
+    if (state == node_state::REPLICA && myself != NULL)
       {
 	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "myself should be in the ha_replica_list\n");
 	return ER_FAILED;
@@ -477,12 +507,30 @@ namespace cubhb
     master = NULL;
     myself = NULL;
     shutdown = true;
-    state = node_entry::UNKNOWN;
+    state = node_state::UNKNOWN;
 
     destroy ();
 
     close (sfd);
     sfd = INVALID_SOCKET;
+  }
+
+  const hostname_type &
+  cluster::get_hostname () const
+  {
+    return hostname;
+  }
+
+  const node_state &
+  cluster::get_state () const
+  {
+    return state;
+  }
+
+  const std::string &
+  cluster::get_group_id () const
+  {
+    return group_id;
   }
 
   node_entry *
@@ -526,7 +574,7 @@ namespace cubhb
   }
 
   ui_node *
-  cluster::find_ui_node (const std::string &node_hostname, const std::string &node_group_id,
+  cluster::find_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
 			 const sockaddr_in &sockaddr) const
   {
     for (ui_node *node : ui_nodes)
@@ -542,7 +590,7 @@ namespace cubhb
   }
 
   ui_node *
-  cluster::insert_ui_node (const std::string &node_hostname, const std::string &node_group_id,
+  cluster::insert_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
 			   const sockaddr_in &sockaddr, const int v_result)
   {
     assert (v_result == HB_VALID_UNIDENTIFIED_NODE || v_result == HB_VALID_GROUP_NAME_MISMATCH
@@ -590,6 +638,9 @@ namespace cubhb
   void
   cluster::get_config_node_list (PARAM_ID prm_id, std::string &group, std::vector<std::string> &hostnames) const
   {
+    group.clear ();
+    hostnames.clear ();
+
     char *prm_string_value = prm_get_string_value (prm_id);
     if (prm_string_value == NULL)
       {
@@ -599,9 +650,6 @@ namespace cubhb
     std::string delimiter = "@:,";
     std::vector<std::string> tokens;
     split_str (prm_string_value, delimiter, tokens);
-
-    group.clear ();
-    hostnames.clear ();
 
     if (tokens.size () < 2)
       {
@@ -617,6 +665,68 @@ namespace cubhb
   }
 
   int
+  cluster::init_state ()
+  {
+    /*    node_state ha_state = (node_state) prm_get_integer_value (PRM_ID_HA_STATE);
+        if (ha_state != node_state::UNKNOWN)
+          {
+    	state = ha_state;
+    	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "state %s was configured\n", hb_node_state_string (ha_state));
+          }
+
+        if (state != node_state::MASTER)
+          {
+    	char *master_host = prm_get_string_value (PRM_ID_HA_MASTER_HOST);
+    	if (master_host == NULL)
+    	  {
+    	    MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_HA_MASTER_HOST));
+    	    return ER_PRM_BAD_VALUE;
+    	  }
+
+    	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "master host: %s\n", master_host);
+
+    	node_entry *master_node = insert_host_node (master_host, node_entry::HIGHEST_PRIORITY);
+    	master_node->state = node_state::MASTER;
+    	master = master_node;
+
+    	node_entry *node = NULL;
+    	if (state == node_state::REPLICA)
+    	  {
+    	    node = insert_host_node ("localhost", node_entry::REPLICA_PRIORITY);
+    	    node->state = node_state::REPLICA;
+    	  }
+    	else
+    	  {
+    	    node = insert_host_node ("localhost", node_entry::HIGHEST_PRIORITY + 1);
+    	    node->state = node_state::SLAVE;
+    	  }
+
+    	myself = node;
+
+    	return NO_ERROR;
+          }
+        if (state == node_state::MASTER)
+          {
+    	node_entry *node = insert_host_node ("localhost", node_entry::HIGHEST_PRIORITY);
+    	node->state = node_state::MASTER;
+
+    	myself = node;
+    	master = node;
+          }*/
+
+    if (HA_GET_MODE () == HA_MODE_REPLICA)
+      {
+	state = node_state::REPLICA;
+      }
+    else
+      {
+	state = node_state::SLAVE;
+      }
+
+    return NO_ERROR;
+  }
+
+  int
   cluster::init_nodes ()
   {
     std::vector<std::string> hostnames;
@@ -624,8 +734,9 @@ namespace cubhb
     get_config_node_list (PRM_ID_HA_NODE_LIST, group_id, hostnames);
     if (hostnames.empty () || group_id.empty ())
       {
-	MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_HA_NODE_LIST));
-	return ER_PRM_BAD_VALUE;
+	// TODO [new slave]
+	//MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_HA_NODE_LIST));
+	return NO_ERROR;
       }
 
     node_entry::priority_type priority = node_entry::HIGHEST_PRIORITY;
@@ -669,7 +780,7 @@ namespace cubhb
 	if (replica_node->get_hostname () == hostname)
 	  {
 	    myself = replica_node;
-	    state = node_entry::node_state::REPLICA;
+	    state = node_state::REPLICA;
 	  }
       }
 
@@ -761,4 +872,110 @@ namespace cubhb
       }
   }
 
+
+  header::header ()
+    : m_type (cluster_message::MSG_UNKNOWN)
+    , m_is_request (false)
+    , m_state (node_state::UNKNOWN)
+    , m_group_id ()
+    , m_orig_hostname ()
+    , m_dest_hostname ()
+  {
+    //
+  }
+
+  header::header (cluster_message type, bool is_request, const hostname_type &dest_hostname, const cluster &c)
+    : m_type (type)
+    , m_is_request (is_request)
+    , m_state (c.get_state ())
+    , m_group_id (c.get_group_id ())
+    , m_orig_hostname (c.get_hostname ())
+    , m_dest_hostname (dest_hostname)
+  {
+    //
+  }
+
+  const cluster_message &
+  header::get_type () const
+  {
+    return m_type;
+  }
+
+  const bool &
+  header::is_request () const
+  {
+    return m_is_request;
+  }
+
+  const node_state &
+  header::get_state () const
+  {
+    return m_state;
+  }
+
+  const std::string &
+  header::get_group_id () const
+  {
+    return m_group_id;
+  }
+
+  const hostname_type &
+  header::get_orig_hostname () const
+  {
+    return m_orig_hostname;
+  }
+
+  const hostname_type &
+  header::get_dest_hostname () const
+  {
+    return m_dest_hostname;
+  }
+
+  size_t
+  header::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
+  {
+    size_t size = serializator.get_packed_int_size (start_offset); // type
+    size += serializator.get_packed_bool_size (size); // is_request
+    size += serializator.get_packed_int_size (size); // m_state
+    size += serializator.get_packed_string_size (m_group_id, size);
+    size += serializator.get_packed_string_size (m_orig_hostname.as_str (), size);
+    size += serializator.get_packed_string_size (m_dest_hostname.as_str (), size);
+
+    return size;
+  }
+
+  void
+  header::pack (cubpacking::packer &serializator) const
+  {
+    serializator.pack_int ((int) m_type);
+    serializator.pack_bool (m_is_request);
+    serializator.pack_int ((int) m_state);
+    serializator.pack_string (m_group_id);
+    serializator.pack_string (m_orig_hostname.as_str ());
+    serializator.pack_string (m_dest_hostname.as_str ());
+  }
+
+  void
+  header::unpack (cubpacking::unpacker &deserializator)
+  {
+    int type;
+    deserializator.unpack_int (type);
+    m_type = (cluster_message) type;
+
+    deserializator.unpack_bool (m_is_request);
+
+    int state;
+    deserializator.unpack_int (state);
+    m_state = (node_state) state;
+
+    deserializator.unpack_string (m_group_id);
+
+    std::string orig_hostname;
+    deserializator.unpack_string (orig_hostname);
+    m_orig_hostname = orig_hostname;
+
+    std::string dest_hostname;
+    deserializator.unpack_string (dest_hostname);
+    m_dest_hostname = dest_hostname;
+  }
 } // namespace cubhb

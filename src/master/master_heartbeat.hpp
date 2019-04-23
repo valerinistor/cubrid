@@ -231,7 +231,7 @@ struct hb_resource
 {
   pthread_mutex_t lock;
 
-  cubhb::node_entry::node_state state;	/* mode/state */
+  cubhb::node_state state;	/* mode/state */
 
   int num_procs;
   HB_PROC_ENTRY *procs;

@@ -87,6 +87,7 @@
 #if defined (SERVER_MODE)
 #include "thread_manager.hpp"	// for thread_get_thread_entry_info
 #endif // SERVER_MODE
+#include "heartbeat_cluster.hpp"
 
 #if defined (SUPPRESS_STRLEN_WARNING)
 #define strlen(s1)  ((int) strlen(s1))
@@ -329,6 +330,10 @@ static const char sysprm_ha_conf_file_name[] = "cubrid_ha.conf";
 #define PRM_NAME_REPLICATION_MODE "replication"
 
 #define PRM_NAME_HA_MODE "ha_mode"
+
+#define PRM_NAME_HA_STATE "ha_state"
+
+#define PRM_NAME_HA_MASTER_HOST "ha_master_host"
 
 #define PRM_NAME_HA_MODE_FOR_SA_UTILS_ONLY "ha_mode_for_sa_utils_only"
 
@@ -1408,6 +1413,18 @@ static int prm_ha_mode_upper = HA_MODE_REPLICA;
 static int prm_ha_mode_lower = HA_MODE_OFF;
 int PRM_HA_MODE_FOR_SA_UTILS_ONLY = HA_MODE_OFF;
 static unsigned int prm_ha_mode_flag = 0;
+
+// *INDENT-OFF*
+int PRM_HA_STATE = cubhb::node_state::UNKNOWN;
+int prm_ha_state_default = cubhb::node_state::UNKNOWN;
+int prm_ha_state_upper = cubhb::node_state::MAX;
+int prm_ha_state_lower = cubhb::node_state::UNKNOWN;
+static unsigned int prm_ha_state_flag = 0;
+// *INDENT-ON*
+
+const char *PRM_HA_MASTER_HOST = "";
+static const char *prm_ha_master_host_default = NULL;
+static unsigned int prm_ha_master_host_flag = 0;
 
 int PRM_HA_SERVER_STATE = HA_SERVER_STATE_IDLE;
 static int prm_ha_server_state_default = HA_SERVER_STATE_IDLE;
@@ -3583,6 +3600,29 @@ static SYSPRM_PARAM prm_Def[] = {
    (void *) &PRM_HA_MODE,
    (void *) &prm_ha_mode_upper,
    (void *) &prm_ha_mode_lower,
+   (char *) NULL,
+   (DUP_PRM_FUNC) NULL,
+   (DUP_PRM_FUNC) NULL},
+  {PRM_ID_HA_STATE,
+   PRM_NAME_HA_STATE,
+   (PRM_FOR_SERVER | PRM_FOR_CLIENT | PRM_FOR_HA | PRM_RELOADABLE | PRM_FORCE_SERVER),	// TODO [new slave]
+   PRM_KEYWORD,
+   &prm_ha_state_flag,
+   (void *) &prm_ha_state_default,
+   (void *) &PRM_HA_STATE,
+   (void *) &prm_ha_state_upper,
+   (void *) &prm_ha_state_lower,
+   (char *) NULL,
+   (DUP_PRM_FUNC) NULL,
+   (DUP_PRM_FUNC) NULL},
+  {PRM_ID_HA_MASTER_HOST,
+   PRM_NAME_HA_MASTER_HOST,
+   (PRM_FOR_SERVER | PRM_FOR_CLIENT | PRM_FOR_HA | PRM_RELOADABLE | PRM_FORCE_SERVER),	// TODO [new slave]
+   PRM_STRING,
+   &prm_ha_master_host_flag,
+   (void *) &prm_ha_master_host_default,
+   (void *) &PRM_HA_MASTER_HOST,
+   (void *) NULL, (void *) NULL,
    (char *) NULL,
    (DUP_PRM_FUNC) NULL,
    (DUP_PRM_FUNC) NULL},
@@ -5919,6 +5959,17 @@ static KEYVAL ha_mode_words[] = {
   {"2", HA_MODE_REPLICA}
 };
 
+// *INDENT-OFF*
+static KEYVAL ha_state_words[] = {
+  {"MASTER", cubhb::node_state::MASTER},
+  {"master", cubhb::node_state::MASTER},
+  {"SLAVE", cubhb::node_state::SLAVE},
+  {"slave", cubhb::node_state::SLAVE},
+  {"REPLICA", cubhb::node_state::REPLICA},
+  {"replica", cubhb::node_state::REPLICA}
+};
+// *INDENT-ON*
+
 static KEYVAL ha_server_state_words[] = {
   {HA_SERVER_STATE_IDLE_STR, HA_SERVER_STATE_IDLE},
   {HA_SERVER_STATE_ACTIVE_STR, HA_SERVER_STATE_ACTIVE},
@@ -7903,6 +7954,10 @@ prm_print (const SYSPRM_PARAM * prm, char *buf, size_t len, PRM_PRINT_MODE print
 	  keyvalp =
 	    prm_keyword (PRM_GET_INT (prm->value), NULL, ha_repl_filter_type_words, DIM (ha_repl_filter_type_words));
 	}
+      else if (intl_mbs_casecmp (prm->name, PRM_NAME_HA_STATE) == 0)
+	{
+	  keyvalp = prm_keyword (PRM_GET_INT (prm->value), NULL, ha_state_words, DIM (ha_state_words));
+	}
       else
 	{
 	  assert (false);
@@ -8198,6 +8253,10 @@ sysprm_print_sysprm_value (PARAM_ID prm_id, SYSPRM_VALUE value, char *buf, size_
       else if (intl_mbs_casecmp (prm->name, PRM_NAME_HA_REPL_FILTER_TYPE) == 0)
 	{
 	  keyvalp = prm_keyword (value.i, NULL, ha_repl_filter_type_words, DIM (ha_repl_filter_type_words));
+	}
+      else if (intl_mbs_casecmp (prm->name, PRM_NAME_HA_STATE) == 0)
+	{
+	  keyvalp = prm_keyword (value.i, NULL, ha_state_words, DIM (ha_state_words));
 	}
       else
 	{
@@ -9401,6 +9460,10 @@ sysprm_generate_new_value (SYSPRM_PARAM * prm, const char *value, bool check, SY
 	else if (intl_mbs_casecmp (prm->name, PRM_NAME_HA_REPL_FILTER_TYPE) == 0)
 	  {
 	    keyvalp = prm_keyword (-1, value, ha_repl_filter_type_words, DIM (ha_repl_filter_type_words));
+	  }
+	else if (intl_mbs_casecmp (prm->name, PRM_NAME_HA_STATE) == 0)
+	  {
+	    keyvalp = prm_keyword (-1, value, ha_state_words, DIM (ha_state_words));
 	  }
 	else
 	  {
