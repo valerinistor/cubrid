@@ -99,11 +99,11 @@ static void hb_cluster_job_check_valid_ping_server (HB_JOB_ARG *arg);
 static void hb_cluster_job_demote (HB_JOB_ARG *arg);
 
 static void hb_cluster_request_heartbeat_to_all (void);
-static void hb_cluster_send_heartbeat_req (const cubhb::hostname_type &dest_hostname);
-static void hb_cluster_send_heartbeat_resp (const sockaddr_in *saddr, socklen_t saddr_len,
-    const cubhb::hostname_type &dest_hostname);
-static void hb_cluster_send_heartbeat_internal (const sockaddr_in *saddr, socklen_t saddr_len,
-    const cubhb::hostname_type &dest_hostname, bool is_req);
+static int hb_cluster_send_heartbeat_req (const cubbase::hostname_type &dest_hostname);
+static int hb_cluster_send_heartbeat_resp (const sockaddr_in *saddr, socklen_t saddr_len,
+    const cubbase::hostname_type &dest_hostname);
+static int hb_cluster_send_heartbeat_internal (const sockaddr_in *saddr, socklen_t saddr_len,
+    const cubbase::hostname_type &dest_hostname, bool is_req);
 
 static void hb_cluster_receive_heartbeat (char *buffer, int len, const sockaddr_in *from, socklen_t from_len);
 static bool hb_cluster_is_isolated (void);
@@ -121,9 +121,9 @@ static int hb_cluster_job_set_expire_and_reorder (unsigned int job_type, unsigne
 static void hb_cluster_job_shutdown (void);
 
 /* cluster node */
-static cubhb::node_entry *hb_return_node_by_name_except_me (const cubhb::hostname_type &name);
+static cubhb::node_entry *hb_return_node_by_name_except_me (const cubbase::hostname_type &name);
 
-static int hb_is_heartbeat_valid (const cubhb::hostname_type &hostname, const std::string &group_id,
+static int hb_is_heartbeat_valid (const cubbase::hostname_type &hostname, const std::string &group_id,
 				  const sockaddr_in *from);
 static const char *hb_valid_result_string (int v_result);
 
@@ -1411,8 +1411,8 @@ hb_cluster_request_heartbeat_to_all (void)
  *
  *   host_name(in):
  */
-static void
-hb_cluster_send_heartbeat_req (const cubhb::hostname_type &dest_hostname)
+static int
+hb_cluster_send_heartbeat_req (const cubbase::hostname_type &dest_hostname)
 {
   sockaddr_in saddr;
   socklen_t saddr_len;
@@ -1420,26 +1420,39 @@ hb_cluster_send_heartbeat_req (const cubhb::hostname_type &dest_hostname)
 
   /* construct destination address */
   memset ((void *) &saddr, 0, sizeof (saddr));
-  if (hb_hostname_n_port_to_sockaddr (dest_hostname.as_c_str (), ha_port, (sockaddr *) &saddr, &saddr_len) != NO_ERROR)
+  int error_code = hb_hostname_n_port_to_sockaddr (dest_hostname.as_c_str (), ha_port, (sockaddr *) &saddr, &saddr_len);
+
+  if (error_code != NO_ERROR)
     {
       MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "hb_hostname_n_port_to_sockaddr failed. \n");
-      return;
+      return error_code;
     }
 
-  hb_cluster_send_heartbeat_internal (&saddr, saddr_len, dest_hostname, true);
+  return hb_cluster_send_heartbeat_internal (&saddr, saddr_len, dest_hostname, true);
 }
 
-static void
+static int
 hb_cluster_send_heartbeat_resp (const sockaddr_in *saddr, socklen_t saddr_len,
-				const cubhb::hostname_type &dest_hostname)
+				const cubbase::hostname_type &dest_hostname)
 {
-  hb_cluster_send_heartbeat_internal (saddr, saddr_len, dest_hostname, false);
+  return hb_cluster_send_heartbeat_internal (saddr, saddr_len, dest_hostname, false);
 }
 
-static void
+static int
 hb_cluster_send_heartbeat_internal (const sockaddr_in *saddr, socklen_t saddr_len,
-				    const cubhb::hostname_type &dest_hostname, bool is_req)
+				    const cubbase::hostname_type &dest_hostname, bool is_req)
 {
+  if (hb_Cluster->sfd == INVALID_SOCKET)
+    {
+      MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_TCP_DATAGRAM_SOCKET, 0);
+      return ERR_CSS_TCP_DATAGRAM_SOCKET;
+    }
+  if (hb_Cluster->myself == NULL)
+    {
+      // if myself is NULL then cluster is not healthy
+      return ER_FAILED;
+    }
+
   cubhb::header header (cubhb::message_type::HEARTBEAT, is_req, dest_hostname, *hb_Cluster);
 
   cubmem::extensible_block eb;
@@ -1452,8 +1465,10 @@ hb_cluster_send_heartbeat_internal (const sockaddr_in *saddr, socklen_t saddr_le
   if (send_len <= 0)
     {
       MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "sendto failed. \n");
-      /* TODO : error */
+      return ER_FAILED;
     }
+
+  return NO_ERROR;
 }
 
 /*
@@ -1766,7 +1781,7 @@ hb_cluster_job_shutdown (void)
  *   name(in):
  */
 static cubhb::node_entry *
-hb_return_node_by_name_except_me (const cubhb::hostname_type &name)
+hb_return_node_by_name_except_me (const cubbase::hostname_type &name)
 {
   for (cubhb::node_entry *node : hb_Cluster->nodes)
     {
@@ -1782,7 +1797,7 @@ hb_return_node_by_name_except_me (const cubhb::hostname_type &name)
 }
 
 static int
-hb_is_heartbeat_valid (const cubhb::hostname_type &hostname, const std::string &group_id, const sockaddr_in *from)
+hb_is_heartbeat_valid (const cubbase::hostname_type &hostname, const std::string &group_id, const sockaddr_in *from)
 {
   int error;
   struct in_addr sin_addr;
@@ -4540,7 +4555,7 @@ hb_get_ping_host_info_string (char **str)
   buf_size += required_size;
 
   required_size = strlen (HA_PING_HOSTS_FORMAT_STRING);
-  required_size += MAXHOSTNAMELEN;
+  required_size += CUB_MAXHOSTNAMELEN;
   required_size += HB_PING_STR_SIZE;	/* length of ping test result */
   required_size *= hb_Cluster->ping_hosts.size ();
 
@@ -4597,12 +4612,12 @@ hb_get_node_info_string (char **str, bool verbose_yn)
     }
 
   required_size = strlen (HA_NODE_INFO_FORMAT_STRING);
-  required_size += MAXHOSTNAMELEN;	/* length of node name */
+  required_size += CUB_MAXHOSTNAMELEN;	/* length of node name */
   required_size += HB_NSTATE_STR_SZ;	/* length of node state */
   buf_size += required_size;
 
   required_size = strlen (HA_NODE_FORMAT_STRING);
-  required_size += MAXHOSTNAMELEN;	/* length of node name */
+  required_size += CUB_MAXHOSTNAMELEN;	/* length of node name */
   required_size += 5;		/* length of priority */
   required_size += HB_NSTATE_STR_SZ;	/* length of node state */
   if (verbose_yn)

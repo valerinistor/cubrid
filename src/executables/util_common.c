@@ -41,6 +41,7 @@
 #include "system_parameter.h"
 #include "environment_variable.h"
 #include "heartbeat.h"
+#include "hostname.hpp"
 #if defined (WINDOWS)
 #include "wintcp.h"
 #else
@@ -418,15 +419,14 @@ utility_localtime (const time_t * ts, struct tm *result)
 bool
 util_is_localhost (char *host)
 {
-  char localhost[MAXHOSTNAMELEN];
+  /* *INDENT-OFF* */
+  cubbase::hostname_type localhost ("localhost");
+  cubbase::hostname_type my_hostname;
+  /* *INDENT-ON* */
 
-  GETHOSTNAME (localhost, MAXHOSTNAMELEN);
-  if (strcmp (host, localhost) == 0)
-    {
-      return true;
-    }
+  my_hostname.fetch ();
 
-  return false;
+  return my_hostname == host || localhost == host;
 }
 
 /*
@@ -572,7 +572,7 @@ util_is_replica_node (void)
 {
   bool is_replica_node = false;
   int i;
-  char local_host_name[MAXHOSTNAMELEN];
+  char local_host_name[CUB_MAXHOSTNAMELEN];
   char *ha_replica_list_p, **ha_replica_list_pp = NULL;
 
   ha_replica_list_p = prm_get_string_value (PRM_ID_HA_REPLICA_LIST);

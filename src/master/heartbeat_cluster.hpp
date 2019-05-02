@@ -24,6 +24,7 @@
 #ifndef _HEARTBEAT_CLUSTER_HPP_
 #define _HEARTBEAT_CLUSTER_HPP_
 
+#include "hostname.hpp"
 #include "packable_object.hpp"
 #include "porting.h"
 #include "system_parameter.h"
@@ -41,37 +42,6 @@ namespace cubhb
 
   static const std::chrono::milliseconds UI_NODE_CACHE_TIME_IN_MSECS (60 * 1000);
   static const std::chrono::milliseconds UI_NODE_CLEANUP_TIME_IN_MSECS (3600 * 1000);
-
-  class hostname_type : public cubpacking::packable_object
-  {
-    public:
-      hostname_type () = default;
-      explicit hostname_type (const char *hostname);
-      explicit hostname_type (const std::string &hostname);
-      hostname_type (const hostname_type &other) = default;
-
-      hostname_type &operator= (const char *hostname);
-      hostname_type &operator= (const std::string &hostname);
-      hostname_type &operator= (const hostname_type &other) = default;
-
-      bool operator== (const char *other) const;
-      bool operator== (const std::string &other) const;
-      bool operator== (const hostname_type &other) const;
-
-      bool operator!= (const char *other) const;
-      bool operator!= (const std::string &other) const;
-      bool operator!= (const hostname_type &other) const;
-
-      const char *as_c_str () const;
-      const std::string &as_str () const;
-
-      size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
-      void pack (cubpacking::packer &serializator) const override;
-      void unpack (cubpacking::unpacker &deserializator) override;
-
-    private:
-      std::string m_hostname;
-  };
 
   enum node_state
   {
@@ -95,20 +65,20 @@ namespace cubhb
       static const priority_type REPLICA_PRIORITY = LOWEST_PRIORITY;
 
       node_entry () = delete;
-      node_entry (hostname_type &hostname, priority_type priority);
+      node_entry (cubbase::hostname_type &hostname, priority_type priority);
       ~node_entry () override = default;
 
       node_entry (const node_entry &other); // Copy c-tor
       node_entry &operator= (const node_entry &other); // Copy assignment
 
-      const hostname_type &get_hostname () const;
+      const cubbase::hostname_type &get_hostname () const;
 
       size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
       void pack (cubpacking::packer &serializator) const override;
       void unpack (cubpacking::unpacker &deserializator) override;
 
     public: // TODO CBRD-22864 members should be private
-      hostname_type hostname;
+      cubbase::hostname_type hostname;
       priority_type priority;
       node_state state;
       short score;
@@ -127,7 +97,7 @@ namespace cubhb
       void ping ();
       bool is_ping_successful ();
 
-      const hostname_type &get_hostname () const;
+      const cubbase::hostname_type &get_hostname () const;
 
       enum ping_result
       {
@@ -139,7 +109,7 @@ namespace cubhb
       };
 
     public: // TODO CBRD-22864 members should be private
-      hostname_type hostname;
+      cubbase::hostname_type hostname;
       ping_result result;
   };
 
@@ -147,15 +117,15 @@ namespace cubhb
   class ui_node
   {
     public:
-      explicit ui_node (const hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr,
+      explicit ui_node (const cubbase::hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr,
 			int v_result);
       ~ui_node () = default;
 
       void set_last_recv_time_to_now ();
-      const hostname_type &get_hostname () const;
+      const cubbase::hostname_type &get_hostname () const;
 
     public: // TODO CBRD-22864 members should be private
-      hostname_type hostname;
+      cubbase::hostname_type hostname;
       std::string group_id;
       sockaddr_in saddr;
       std::chrono::system_clock::time_point last_recv_time;
@@ -179,17 +149,18 @@ namespace cubhb
       int listen ();
       void stop ();
 
-      const hostname_type &get_hostname () const;
+      const cubbase::hostname_type &get_hostname () const;
       const node_state &get_state () const;
       const std::string &get_group_id () const;
+      const node_entry *get_myself_node () const;
 
-      node_entry *find_node (const hostname_type &node_hostname) const;
+      node_entry *find_node (const cubbase::hostname_type &node_hostname) const;
 
       void remove_ui_node (ui_node *&node);
       void cleanup_ui_nodes ();
-      ui_node *find_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
+      ui_node *find_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
 			     const sockaddr_in &sockaddr) const;
-      ui_node *insert_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
+      ui_node *insert_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
 			       const sockaddr_in &sockaddr, int v_result);
 
       bool check_valid_ping_host ();
@@ -211,7 +182,7 @@ namespace cubhb
 
       node_state state;
       std::string group_id;
-      hostname_type hostname;
+      cubbase::hostname_type hostname;
 
       std::list<node_entry *> nodes;
 
@@ -227,8 +198,6 @@ namespace cubhb
       std::list<ping_host> ping_hosts;
   };
 
-
-
   enum message_type
   {
     MSG_UNKNOWN = 0,
@@ -239,14 +208,14 @@ namespace cubhb
   {
     public:
       header ();
-      header (message_type type, bool is_request, const hostname_type &dest_hostname, const cluster &c);
+      header (message_type type, bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c);
 
       const message_type &get_message_type () const;
       const bool &is_request () const;
       const node_state &get_state () const;
       const std::string &get_group_id () const;
-      const hostname_type &get_orig_hostname () const;
-      const hostname_type &get_dest_hostname () const;
+      const cubbase::hostname_type &get_orig_hostname () const;
+      const cubbase::hostname_type &get_dest_hostname () const;
 
       size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
       void pack (cubpacking::packer &serializator) const override;
@@ -258,8 +227,8 @@ namespace cubhb
 
       node_state m_state;
       std::string m_group_id;
-      hostname_type m_orig_hostname;
-      hostname_type m_dest_hostname;
+      cubbase::hostname_type m_orig_hostname;
+      cubbase::hostname_type m_dest_hostname;
   };
 } // namespace cubhb
 

@@ -41,139 +41,7 @@ namespace cubhb
 namespace cubhb
 {
 
-  hostname_type::hostname_type (const char *hostname)
-    :m_hostname (hostname)
-  {
-    //
-  }
-
-  hostname_type::hostname_type (const std::string &hostname)
-    :m_hostname (hostname)
-  {
-    //
-  }
-
-  hostname_type &
-  hostname_type::operator= (const char *hostname)
-  {
-    m_hostname.assign (hostname);
-    return *this;
-  }
-
-  hostname_type &
-  hostname_type::operator= (const std::string &hostname)
-  {
-    m_hostname.assign (hostname);
-    return *this;
-  }
-
-  /**
-   * Compare two host names if are equal, if one of the host names is canonical name and the other is not, then
-   * only host part (e.g. for canonical name "host-1.cubrid.org" host part is "host-1") is used for comparison
-   *
-   * for example following hosts are equal:
-   *  "host-1"            "host-1"
-   *  "host-1"            "host-1.cubrid.org"
-   *  "host-1.cubrid.org" "host-1"
-   *  "host-1.cubrid.org" "host-1.cubrid.org"
-   *
-   * for example following hosts are not equal:
-   *  "host-1"            "host-2"
-   *  "host-1.cubrid.org" "host-2"
-   *  "host-1"            "host-2.cubrid.org"
-   *  "host-1.cubrid.org" "host-2.cubrid.org"
-   *  "host-1.cubrid.org" "host-1.cubrid.com"
-   *
-   * @param other second hostname (first hostname is this->m_hostname)
-   *
-   * @return true if this->m_hostname is same as other
-   */
-  bool
-  hostname_type::operator== (const char *other) const
-  {
-    const char *lhs = other;
-    const char *rhs = this->m_hostname.c_str ();
-
-    for (; *rhs && *lhs && (*rhs == *lhs); ++rhs, ++lhs)
-      ;
-
-    if (*rhs == '\0' && *lhs != '\0')
-      {
-	// if rhs reached the end and lhs does not, lhs must be '.'
-	return *lhs == '.';
-      }
-    else if (*rhs != '\0' && *lhs == '\0')
-      {
-	// if lhs reached the end and rhs does not, rhs must be '.'
-	return *rhs == '.';
-      }
-    else
-      {
-	return *rhs == *lhs;
-      }
-  }
-
-  bool
-  hostname_type::operator== (const std::string &other) const
-  {
-    return *this == other.c_str ();
-  }
-
-  bool
-  hostname_type::operator== (const hostname_type &other) const
-  {
-    return *this == other.m_hostname.c_str ();
-  }
-
-  bool
-  hostname_type::operator!= (const char *other) const
-  {
-    return ! (*this == other);
-  }
-
-  bool
-  hostname_type::operator!= (const std::string &other) const
-  {
-    return ! (*this == other.c_str ());
-  }
-
-  bool
-  hostname_type::operator!= (const hostname_type &other) const
-  {
-    return ! (*this == other.m_hostname.c_str ());
-  }
-
-  const char *
-  hostname_type::as_c_str () const
-  {
-    return m_hostname.c_str ();
-  }
-
-  const std::string &
-  hostname_type::as_str () const
-  {
-    return m_hostname;
-  }
-
-  size_t
-  hostname_type::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
-  {
-    return serializator.get_packed_string_size (m_hostname, start_offset);
-  }
-
-  void
-  hostname_type::pack (cubpacking::packer &serializator) const
-  {
-    serializator.pack_string (m_hostname);
-  }
-
-  void
-  hostname_type::unpack (cubpacking::unpacker &deserializator)
-  {
-    deserializator.unpack_string (m_hostname);
-  }
-
-  node_entry::node_entry (hostname_type &hostname, priority_type priority)
+  node_entry::node_entry (cubbase::hostname_type &hostname, priority_type priority)
     : hostname (hostname)
     , priority (priority)
     , state (node_state::UNKNOWN)
@@ -210,7 +78,7 @@ namespace cubhb
     return *this;
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   node_entry::get_hostname () const
   {
     return hostname;
@@ -266,13 +134,14 @@ namespace cubhb
     return result == ping_result::SUCCESS;
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   ping_host::get_hostname () const
   {
     return hostname;
   }
 
-  ui_node::ui_node (const hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr, int v_result)
+  ui_node::ui_node (const cubbase::hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr,
+		    int v_result)
     : hostname (hostname)
     , group_id (group_id)
     , saddr ()
@@ -288,7 +157,7 @@ namespace cubhb
     last_recv_time = std::chrono::system_clock::now ();
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   ui_node::get_hostname () const
   {
     return hostname;
@@ -361,15 +230,13 @@ namespace cubhb
   int
   cluster::init ()
   {
-    char hostname_cstr[MAXHOSTNAMELEN];
-    int error_code = css_gethostname (hostname_cstr, MAXHOSTNAMELEN);
+    int error_code = hostname.fetch ();
     if (error_code != NO_ERROR)
       {
 	MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_BO_UNABLE_TO_FIND_HOSTNAME, 0);
 	return ER_BO_UNABLE_TO_FIND_HOSTNAME;
       }
 
-    hostname = hostname_cstr;
     is_ping_check_enabled = true;
 
     error_code = init_state ();
@@ -531,7 +398,7 @@ namespace cubhb
     sfd = INVALID_SOCKET;
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   cluster::get_hostname () const
   {
     return hostname;
@@ -549,8 +416,14 @@ namespace cubhb
     return group_id;
   }
 
+  const node_entry *
+  cluster::get_myself_node () const
+  {
+    return myself;
+  }
+
   node_entry *
-  cluster::find_node (const hostname_type &node_hostname) const
+  cluster::find_node (const cubbase::hostname_type &node_hostname) const
   {
     for (node_entry *node : nodes)
       {
@@ -590,7 +463,7 @@ namespace cubhb
   }
 
   ui_node *
-  cluster::find_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
+  cluster::find_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
 			 const sockaddr_in &sockaddr) const
   {
     for (ui_node *node : ui_nodes)
@@ -606,7 +479,7 @@ namespace cubhb
   }
 
   ui_node *
-  cluster::insert_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
+  cluster::insert_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
 			   const sockaddr_in &sockaddr, const int v_result)
   {
     assert (v_result == HB_VALID_UNIDENTIFIED_NODE || v_result == HB_VALID_GROUP_NAME_MISMATCH
@@ -826,7 +699,7 @@ namespace cubhb
   cluster::insert_host_node (const std::string &node_hostname, const node_entry::priority_type priority)
   {
     node_entry *node = NULL;
-    hostname_type node_hostname_ (node_hostname);
+    cubbase::hostname_type node_hostname_ (node_hostname);
 
     if (node_hostname_ == "localhost")
       {
@@ -888,7 +761,6 @@ namespace cubhb
       }
   }
 
-
   header::header ()
     : m_message_type (message_type::MSG_UNKNOWN)
     , m_is_request (false)
@@ -900,15 +772,18 @@ namespace cubhb
     //
   }
 
-  header::header (message_type type, bool is_request, const hostname_type &dest_hostname, const cluster &c)
+  header::header (message_type type, bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c)
     : m_message_type (type)
     , m_is_request (is_request)
     , m_state (c.get_state ())
     , m_group_id (c.get_group_id ())
-    , m_orig_hostname (c.get_hostname ())
+    , m_orig_hostname ()
     , m_dest_hostname (dest_hostname)
   {
-    //
+    if (c.get_myself_node () != NULL)
+      {
+	m_orig_hostname = c.get_myself_node ()->get_hostname ();
+      }
   }
 
   const message_type &
@@ -935,13 +810,13 @@ namespace cubhb
     return m_group_id;
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   header::get_orig_hostname () const
   {
     return m_orig_hostname;
   }
 
-  const hostname_type &
+  const cubbase::hostname_type &
   header::get_dest_hostname () const
   {
     return m_dest_hostname;
