@@ -825,8 +825,8 @@ namespace cubhb
   size_t
   header::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
   {
-    size_t size = serializator.get_packed_int_size (start_offset); // type
-    size += serializator.get_packed_bool_size (size); // is_request
+    size_t size = serializator.get_packed_int_size (start_offset); // m_message_type
+    size += serializator.get_packed_bool_size (size); // m_is_request
     size += serializator.get_packed_int_size (size); // m_state
     size += serializator.get_packed_string_size (m_group_id, size);
     size += m_orig_hostname.get_packed_size (serializator, size);
@@ -838,9 +838,9 @@ namespace cubhb
   void
   header::pack (cubpacking::packer &serializator) const
   {
-    serializator.pack_int ((int) m_message_type);
+    serializator.pack_to_int (m_message_type);
     serializator.pack_bool (m_is_request);
-    serializator.pack_int ((int) m_state);
+    serializator.pack_to_int (m_state);
     serializator.pack_string (m_group_id);
     m_orig_hostname.pack (serializator);
     m_dest_hostname.pack (serializator);
@@ -849,16 +849,9 @@ namespace cubhb
   void
   header::unpack (cubpacking::unpacker &deserializator)
   {
-    int type;
-    deserializator.unpack_int (type);
-    m_message_type = (message_type) type;
-
+    deserializator.unpack_from_int (m_message_type);
     deserializator.unpack_bool (m_is_request);
-
-    int state;
-    deserializator.unpack_int (state);
-    m_state = (node_state) state;
-
+    deserializator.unpack_from_int (m_state);
     deserializator.unpack_string (m_group_id);
     m_orig_hostname.unpack (deserializator);
     m_dest_hostname.unpack (deserializator);
