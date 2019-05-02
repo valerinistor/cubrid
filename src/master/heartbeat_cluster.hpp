@@ -42,7 +42,7 @@ namespace cubhb
   static const std::chrono::milliseconds UI_NODE_CACHE_TIME_IN_MSECS (60 * 1000);
   static const std::chrono::milliseconds UI_NODE_CLEANUP_TIME_IN_MSECS (3600 * 1000);
 
-  class hostname_type
+  class hostname_type : public cubpacking::packable_object
   {
     public:
       hostname_type () = default;
@@ -64,6 +64,10 @@ namespace cubhb
 
       const char *as_c_str () const;
       const std::string &as_str () const;
+
+      size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
+      void pack (cubpacking::packer &serializator) const override;
+      void unpack (cubpacking::unpacker &deserializator) override;
 
     private:
       std::string m_hostname;
@@ -92,7 +96,7 @@ namespace cubhb
 
       node_entry () = delete;
       node_entry (hostname_type &hostname, priority_type priority);
-      ~node_entry () = default;
+      ~node_entry () override = default;
 
       node_entry (const node_entry &other); // Copy c-tor
       node_entry &operator= (const node_entry &other); // Copy assignment
@@ -186,7 +190,7 @@ namespace cubhb
       ui_node *find_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
 			     const sockaddr_in &sockaddr) const;
       ui_node *insert_ui_node (const hostname_type &node_hostname, const std::string &node_group_id,
-			       const sockaddr_in &sockaddr, const int v_result);
+			       const sockaddr_in &sockaddr, int v_result);
 
       bool check_valid_ping_host ();
 
@@ -198,7 +202,7 @@ namespace cubhb
       int init_replica_nodes ();
       void init_ping_hosts ();
 
-      node_entry *insert_host_node (const std::string &node_hostname, const node_entry::priority_type priority);
+      node_entry *insert_host_node (const std::string &node_hostname, node_entry::priority_type priority);
 
     public: // TODO CBRD-22864 members should be private
       pthread_mutex_t lock; // TODO CBRD-22864 replace with std::mutex
@@ -225,20 +229,19 @@ namespace cubhb
 
 
 
-  enum cluster_message
+  enum message_type
   {
     MSG_UNKNOWN = 0,
     HEARTBEAT = 1,
-    MSG_MAX
   };
 
   class header : public cubpacking::packable_object
   {
     public:
       header ();
-      header (cluster_message type, bool is_request, const hostname_type &dest_hostname, const cluster &c);
+      header (message_type type, bool is_request, const hostname_type &dest_hostname, const cluster &c);
 
-      const cluster_message &get_type () const;
+      const message_type &get_message_type () const;
       const bool &is_request () const;
       const node_state &get_state () const;
       const std::string &get_group_id () const;
@@ -250,7 +253,7 @@ namespace cubhb
       void unpack (cubpacking::unpacker &deserializator) override;
 
     private:
-      cluster_message m_type;
+      message_type m_message_type;
       bool m_is_request;
 
       node_state m_state;

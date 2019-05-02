@@ -155,6 +155,24 @@ namespace cubhb
     return m_hostname;
   }
 
+  size_t
+  hostname_type::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
+  {
+    return serializator.get_packed_string_size (m_hostname, start_offset);
+  }
+
+  void
+  hostname_type::pack (cubpacking::packer &serializator) const
+  {
+    serializator.pack_string (m_hostname);
+  }
+
+  void
+  hostname_type::unpack (cubpacking::unpacker &deserializator)
+  {
+    deserializator.unpack_string (m_hostname);
+  }
+
   node_entry::node_entry (hostname_type &hostname, priority_type priority)
     : hostname (hostname)
     , priority (priority)
@@ -201,7 +219,7 @@ namespace cubhb
   size_t
   node_entry::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
   {
-    size_t size = serializator.get_packed_string_size (hostname.as_str (), start_offset);
+    size_t size = hostname.get_packed_size (serializator, start_offset);
     size += serializator.get_packed_short_size (size);
     size += serializator.get_packed_int_size (size);
     return size;
@@ -210,7 +228,7 @@ namespace cubhb
   void
   node_entry::pack (cubpacking::packer &serializator) const
   {
-    serializator.pack_string (hostname.as_str ());
+    hostname.pack (serializator);
     serializator.pack_short (priority);
     serializator.pack_int ((int) state);
   }
@@ -218,17 +236,15 @@ namespace cubhb
   void
   node_entry::unpack (cubpacking::unpacker &deserializator)
   {
-    std::string unpacked_hostname;
-    deserializator.unpack_string (unpacked_hostname);
-    hostname = unpacked_hostname;
+    hostname.unpack (deserializator);
 
-    short unpacked_priority;
-    deserializator.unpack_short (unpacked_priority);
-    priority = unpacked_priority;
+    short priority_;
+    deserializator.unpack_short (priority_);
+    priority = priority_;
 
-    int unpacked_state;
-    deserializator.unpack_int (unpacked_state);
-    state = (node_state) unpacked_state;
+    int state_;
+    deserializator.unpack_int (state_);
+    state = (node_state) state_;
   }
 
   ping_host::ping_host (const std::string &hostname)
@@ -874,7 +890,7 @@ namespace cubhb
 
 
   header::header ()
-    : m_type (cluster_message::MSG_UNKNOWN)
+    : m_message_type (message_type::MSG_UNKNOWN)
     , m_is_request (false)
     , m_state (node_state::UNKNOWN)
     , m_group_id ()
@@ -884,8 +900,8 @@ namespace cubhb
     //
   }
 
-  header::header (cluster_message type, bool is_request, const hostname_type &dest_hostname, const cluster &c)
-    : m_type (type)
+  header::header (message_type type, bool is_request, const hostname_type &dest_hostname, const cluster &c)
+    : m_message_type (type)
     , m_is_request (is_request)
     , m_state (c.get_state ())
     , m_group_id (c.get_group_id ())
@@ -895,10 +911,10 @@ namespace cubhb
     //
   }
 
-  const cluster_message &
-  header::get_type () const
+  const message_type &
+  header::get_message_type () const
   {
-    return m_type;
+    return m_message_type;
   }
 
   const bool &
@@ -938,8 +954,8 @@ namespace cubhb
     size += serializator.get_packed_bool_size (size); // is_request
     size += serializator.get_packed_int_size (size); // m_state
     size += serializator.get_packed_string_size (m_group_id, size);
-    size += serializator.get_packed_string_size (m_orig_hostname.as_str (), size);
-    size += serializator.get_packed_string_size (m_dest_hostname.as_str (), size);
+    size += m_orig_hostname.get_packed_size (serializator, size);
+    size += m_dest_hostname.get_packed_size (serializator, size);
 
     return size;
   }
@@ -947,12 +963,12 @@ namespace cubhb
   void
   header::pack (cubpacking::packer &serializator) const
   {
-    serializator.pack_int ((int) m_type);
+    serializator.pack_int ((int) m_message_type);
     serializator.pack_bool (m_is_request);
     serializator.pack_int ((int) m_state);
     serializator.pack_string (m_group_id);
-    serializator.pack_string (m_orig_hostname.as_str ());
-    serializator.pack_string (m_dest_hostname.as_str ());
+    m_orig_hostname.pack (serializator);
+    m_dest_hostname.pack (serializator);
   }
 
   void
@@ -960,7 +976,7 @@ namespace cubhb
   {
     int type;
     deserializator.unpack_int (type);
-    m_type = (cluster_message) type;
+    m_message_type = (message_type) type;
 
     deserializator.unpack_bool (m_is_request);
 
@@ -969,13 +985,7 @@ namespace cubhb
     m_state = (node_state) state;
 
     deserializator.unpack_string (m_group_id);
-
-    std::string orig_hostname;
-    deserializator.unpack_string (orig_hostname);
-    m_orig_hostname = orig_hostname;
-
-    std::string dest_hostname;
-    deserializator.unpack_string (dest_hostname);
-    m_dest_hostname = dest_hostname;
+    m_orig_hostname.unpack (deserializator);
+    m_dest_hostname.unpack (deserializator);
   }
 } // namespace cubhb

@@ -1440,7 +1440,7 @@ static void
 hb_cluster_send_heartbeat_internal (const sockaddr_in *saddr, socklen_t saddr_len,
 				    const cubhb::hostname_type &dest_hostname, bool is_req)
 {
-  cubhb::header header (cubhb::cluster_message::HEARTBEAT, is_req, dest_hostname, *hb_Cluster);
+  cubhb::header header (cubhb::message_type::HEARTBEAT, is_req, dest_hostname, *hb_Cluster);
 
   cubmem::extensible_block eb;
   cubpacking::packer packer;
@@ -1495,9 +1495,9 @@ hb_cluster_receive_heartbeat (char *buffer, int len, const sockaddr_in *from, so
       return;
     }
 
-  switch (header.get_type ())
+  switch (header.get_message_type ())
     {
-    case cubhb::cluster_message::HEARTBEAT:
+    case cubhb::message_type::HEARTBEAT:
     {
       rv = hb_is_heartbeat_valid (header.get_orig_hostname (), header.get_group_id (), from);
       if (rv != HB_VALID_NO_ERROR)
@@ -1568,7 +1568,7 @@ hb_cluster_receive_heartbeat (char *buffer, int len, const sockaddr_in *from, so
     break;
 
     default:
-      MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "unknown heartbeat message. (type:%d). \n", header.get_type ());
+      MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "unknown heartbeat message. (type:%d). \n", header.get_message_type ());
       break;
     }
 
