@@ -24,6 +24,9 @@
 #ifndef _HEARTBEAT_CLUSTER_HPP_
 #define _HEARTBEAT_CLUSTER_HPP_
 
+#include "heartbeat_config.hpp"
+#include "heartbeat_service.hpp"
+#include "heartbeat_transport.hpp"
 #include "hostname.hpp"
 #include "packable_object.hpp"
 #include "porting.h"
@@ -135,7 +138,7 @@ namespace cubhb
   class cluster
   {
     public:
-      cluster ();
+      explicit cluster (config &conf);
 
       cluster (const cluster &other); // Copy c-tor
       cluster &operator= (const cluster &other); // Copy assignment
@@ -156,6 +159,8 @@ namespace cubhb
 
       node_entry *find_node (const cubbase::hostname_type &node_hostname) const;
 
+      void request_heartbeat_from_all ();
+
       void remove_ui_node (ui_node *&node);
       void cleanup_ui_nodes ();
       ui_node *find_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
@@ -166,7 +171,7 @@ namespace cubhb
       bool check_valid_ping_host ();
 
     private:
-      void get_config_node_list (PARAM_ID prm_id, std::string &group, std::vector<std::string> &hostnames) const;
+      void get_config_node_list (const char *prm, std::string &group, std::vector<std::string> &hostnames) const;
 
       int init_state ();
       int init_nodes ();
@@ -176,6 +181,9 @@ namespace cubhb
       node_entry *insert_host_node (const std::string &node_hostname, node_entry::priority_type priority);
 
     public: // TODO CBRD-22864 members should be private
+      config &m_config;
+      heartbeat_service m_hb_service;
+
       pthread_mutex_t lock; // TODO CBRD-22864 replace with std::mutex
 
       SOCKET sfd;
@@ -198,38 +206,6 @@ namespace cubhb
       std::list<ping_host> ping_hosts;
   };
 
-  enum message_type
-  {
-    MSG_UNKNOWN = 0,
-    HEARTBEAT = 1,
-  };
-
-  class header : public cubpacking::packable_object
-  {
-    public:
-      header ();
-      header (message_type type, bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c);
-
-      const message_type &get_message_type () const;
-      const bool &is_request () const;
-      const node_state &get_state () const;
-      const std::string &get_group_id () const;
-      const cubbase::hostname_type &get_orig_hostname () const;
-      const cubbase::hostname_type &get_dest_hostname () const;
-
-      size_t get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const override;
-      void pack (cubpacking::packer &serializator) const override;
-      void unpack (cubpacking::unpacker &deserializator) override;
-
-    private:
-      message_type m_message_type;
-      bool m_is_request;
-
-      node_state m_state;
-      std::string m_group_id;
-      cubbase::hostname_type m_orig_hostname;
-      cubbase::hostname_type m_dest_hostname;
-  };
 } // namespace cubhb
 
 #endif /* _HEARTBEAT_CLUSTER_HPP_ */

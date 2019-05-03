@@ -109,26 +109,26 @@ namespace cubbase
       }
 
       /**
-      * Compare two host names if are equal, if one of the host names is canonical name and the other is not, then
-      * only host part (e.g. for canonical name "host-1.cubrid.org" host part is "host-1") is used for comparison
-      *
-      * for example following hosts are equal:
-      *  "host-1"            "host-1"
-      *  "host-1"            "host-1.cubrid.org"
-      *  "host-1.cubrid.org" "host-1"
-      *  "host-1.cubrid.org" "host-1.cubrid.org"
-      *
-      * for example following hosts are not equal:
-      *  "host-1"            "host-2"
-      *  "host-1.cubrid.org" "host-2"
-      *  "host-1"            "host-2.cubrid.org"
-      *  "host-1.cubrid.org" "host-2.cubrid.org"
-      *  "host-1.cubrid.org" "host-1.cubrid.com"
-      *
-      * @param other second hostname (first hostname is this->m_hostname)
-      *
-      * @return true if this->m_hostname is same as other
-      */
+       * Compare two host names if are equal, if one of the host names is canonical name and the other is not, then
+       * only host part (e.g. for canonical name "host-1.cubrid.org" host part is "host-1") is used for comparison
+       *
+       * for example following hosts are equal:
+       *  "host-1"            "host-1"
+       *  "host-1"            "host-1.cubrid.org"
+       *  "host-1.cubrid.org" "host-1"
+       *  "host-1.cubrid.org" "host-1.cubrid.org"
+       *
+       * for example following hosts are not equal:
+       *  "host-1"            "host-2"
+       *  "host-1.cubrid.org" "host-2"
+       *  "host-1"            "host-2.cubrid.org"
+       *  "host-1.cubrid.org" "host-2.cubrid.org"
+       *  "host-1.cubrid.org" "host-1.cubrid.com"
+       *
+       * @param other second hostname (first hostname is this->m_hostname)
+       *
+       * @return true if this->m_hostname is same as other
+       */
       bool
       operator== (const char *other) const
       {

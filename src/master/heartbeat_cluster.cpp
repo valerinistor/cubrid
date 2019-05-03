@@ -98,7 +98,7 @@ namespace cubhb
   {
     hostname.pack (serializator);
     serializator.pack_short (priority);
-    serializator.pack_int ((int) state);
+    serializator.pack_to_int (state);
   }
 
   void
@@ -110,9 +110,7 @@ namespace cubhb
     deserializator.unpack_short (priority_);
     priority = priority_;
 
-    int state_;
-    deserializator.unpack_int (state_);
-    state = (node_state) state_;
+    deserializator.unpack_from_int (state);
   }
 
   ping_host::ping_host (const std::string &hostname)
@@ -163,8 +161,10 @@ namespace cubhb
     return hostname;
   }
 
-  cluster::cluster ()
-    : lock ()
+  cluster::cluster (config &conf)
+    : m_config (conf)
+    , m_hb_service ()
+    , lock ()
     , sfd (INVALID_SOCKET)
     , state (node_state ::UNKNOWN)
     , group_id ()
@@ -183,7 +183,8 @@ namespace cubhb
   }
 
   cluster::cluster (const cluster &other)
-    : lock ()
+    : m_config (other.m_config)
+    , lock ()
     , sfd (other.sfd)
     , state (other.state)
     , group_id (other.group_id)
@@ -204,6 +205,7 @@ namespace cubhb
   cluster &
   cluster::operator= (const cluster &other)
   {
+    m_config = other.m_config;
     memcpy (&lock, &other.lock, sizeof (pthread_mutex_t));
     sfd = other.sfd;
     state = other.state;
@@ -373,7 +375,7 @@ namespace cubhb
     memset ((void *) &udp_sockaddr, 0, sizeof (udp_sockaddr));
     udp_sockaddr.sin_family = AF_INET;
     udp_sockaddr.sin_addr.s_addr = htonl (INADDR_ANY);
-    udp_sockaddr.sin_port = htons (prm_get_integer_value (PRM_ID_HA_PORT_ID));
+    udp_sockaddr.sin_port = htons (m_config.get_port ());
 
     if (bind (sfd, (sockaddr *) &udp_sockaddr, sizeof (udp_sockaddr)) < 0)
       {
@@ -434,6 +436,21 @@ namespace cubhb
       }
 
     return NULL;
+  }
+
+  void
+  cluster::request_heartbeat_from_all ()
+  {
+    for (node_entry *node : nodes)
+      {
+	if (hostname == node->get_hostname ())
+	  {
+	    continue;
+	  }
+
+	m_hb_service.send_heartbeat_request (node->get_hostname ());
+	node->heartbeat_gap++;
+      }
   }
 
   void
@@ -525,20 +542,19 @@ namespace cubhb
   }
 
   void
-  cluster::get_config_node_list (PARAM_ID prm_id, std::string &group, std::vector<std::string> &hostnames) const
+  cluster::get_config_node_list (const char *prm, std::string &group, std::vector<std::string> &hostnames) const
   {
     group.clear ();
     hostnames.clear ();
 
-    char *prm_string_value = prm_get_string_value (prm_id);
-    if (prm_string_value == NULL)
+    if (prm == NULL)
       {
 	return;
       }
 
     std::string delimiter = "@:,";
     std::vector<std::string> tokens;
-    split_str (prm_string_value, delimiter, tokens);
+    split_str (prm, delimiter, tokens);
 
     if (tokens.size () < 2)
       {
@@ -556,16 +572,17 @@ namespace cubhb
   int
   cluster::init_state ()
   {
-    /*    node_state ha_state = (node_state) prm_get_integer_value (PRM_ID_HA_STATE);
+    /*
+        node_state ha_state = (node_state) m_config.get_state ();
         if (ha_state != node_state::UNKNOWN)
           {
     	state = ha_state;
-    	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "state %s was configured\n", hb_node_state_string (ha_state));
+    	//MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "state %s was configured\n", hb_node_state_string (ha_state));
           }
 
         if (state != node_state::MASTER)
           {
-    	char *master_host = prm_get_string_value (PRM_ID_HA_MASTER_HOST);
+    	const char *master_host = m_config.get_master_host ();
     	if (master_host == NULL)
     	  {
     	    MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_HA_MASTER_HOST));
@@ -601,7 +618,8 @@ namespace cubhb
 
     	myself = node;
     	master = node;
-          }*/
+          }
+    */
 
     if (HA_GET_MODE () == HA_MODE_REPLICA)
       {
@@ -620,7 +638,7 @@ namespace cubhb
   {
     std::vector<std::string> hostnames;
 
-    get_config_node_list (PRM_ID_HA_NODE_LIST, group_id, hostnames);
+    get_config_node_list (m_config.get_node_list (), group_id, hostnames);
     if (hostnames.empty () || group_id.empty ())
       {
 	// TODO [new slave]
@@ -652,7 +670,7 @@ namespace cubhb
     std::string replica_group_id;
     std::vector<std::string> hostnames;
 
-    get_config_node_list (PRM_ID_HA_REPLICA_LIST, replica_group_id, hostnames);
+    get_config_node_list (m_config.get_replica_list (), replica_group_id, hostnames);
     if (hostnames.empty ())
       {
 	return NO_ERROR;
@@ -679,7 +697,7 @@ namespace cubhb
   void
   cluster::init_ping_hosts ()
   {
-    char *ha_ping_hosts = prm_get_string_value (PRM_ID_HA_PING_HOSTS);
+    const char *ha_ping_hosts = m_config.get_ping_hosts ();
     if (ha_ping_hosts == NULL)
       {
 	return;
@@ -761,99 +779,4 @@ namespace cubhb
       }
   }
 
-  header::header ()
-    : m_message_type (message_type::MSG_UNKNOWN)
-    , m_is_request (false)
-    , m_state (node_state::UNKNOWN)
-    , m_group_id ()
-    , m_orig_hostname ()
-    , m_dest_hostname ()
-  {
-    //
-  }
-
-  header::header (message_type type, bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c)
-    : m_message_type (type)
-    , m_is_request (is_request)
-    , m_state (c.get_state ())
-    , m_group_id (c.get_group_id ())
-    , m_orig_hostname ()
-    , m_dest_hostname (dest_hostname)
-  {
-    if (c.get_myself_node () != NULL)
-      {
-	m_orig_hostname = c.get_myself_node ()->get_hostname ();
-      }
-  }
-
-  const message_type &
-  header::get_message_type () const
-  {
-    return m_message_type;
-  }
-
-  const bool &
-  header::is_request () const
-  {
-    return m_is_request;
-  }
-
-  const node_state &
-  header::get_state () const
-  {
-    return m_state;
-  }
-
-  const std::string &
-  header::get_group_id () const
-  {
-    return m_group_id;
-  }
-
-  const cubbase::hostname_type &
-  header::get_orig_hostname () const
-  {
-    return m_orig_hostname;
-  }
-
-  const cubbase::hostname_type &
-  header::get_dest_hostname () const
-  {
-    return m_dest_hostname;
-  }
-
-  size_t
-  header::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
-  {
-    size_t size = serializator.get_packed_int_size (start_offset); // m_message_type
-    size += serializator.get_packed_bool_size (size); // m_is_request
-    size += serializator.get_packed_int_size (size); // m_state
-    size += serializator.get_packed_string_size (m_group_id, size);
-    size += m_orig_hostname.get_packed_size (serializator, size);
-    size += m_dest_hostname.get_packed_size (serializator, size);
-
-    return size;
-  }
-
-  void
-  header::pack (cubpacking::packer &serializator) const
-  {
-    serializator.pack_to_int (m_message_type);
-    serializator.pack_bool (m_is_request);
-    serializator.pack_to_int (m_state);
-    serializator.pack_string (m_group_id);
-    m_orig_hostname.pack (serializator);
-    m_dest_hostname.pack (serializator);
-  }
-
-  void
-  header::unpack (cubpacking::unpacker &deserializator)
-  {
-    deserializator.unpack_from_int (m_message_type);
-    deserializator.unpack_bool (m_is_request);
-    deserializator.unpack_from_int (m_state);
-    deserializator.unpack_string (m_group_id);
-    m_orig_hostname.unpack (deserializator);
-    m_dest_hostname.unpack (deserializator);
-  }
 } // namespace cubhb

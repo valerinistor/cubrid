@@ -68,6 +68,9 @@ endif(UNIX)
 add_dependencies(csql cubridsa cubridcs)
 
 set(CUB_MASTER_SOURCES
+  ${MASTER_DIR}/heartbeat_config.cpp
+  ${MASTER_DIR}/heartbeat_service.cpp
+  ${MASTER_DIR}/heartbeat_transport.cpp
   ${MASTER_DIR}/master.c
   ${MASTER_DIR}/master_request.c
   ${MASTER_DIR}/master_util.c
