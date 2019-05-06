@@ -137,7 +137,7 @@ namespace cubhb
   class cluster
   {
     public:
-      explicit cluster (config &conf);
+      explicit cluster (config *conf);
 
       cluster (const cluster &other); // Copy c-tor
       cluster &operator= (const cluster &other); // Copy assignment
@@ -185,7 +185,7 @@ namespace cubhb
 					 const sockaddr_in *from) const;
 
     public: // TODO CBRD-22864 members should be private
-      config &m_config;
+      config *m_config;
       heartbeat_service m_hb_service;
 
       pthread_mutex_t lock; // TODO CBRD-22864 replace with std::mutex

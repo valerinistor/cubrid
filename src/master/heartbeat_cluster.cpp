@@ -165,7 +165,7 @@ namespace cubhb
     return hostname;
   }
 
-  cluster::cluster (config &conf)
+  cluster::cluster (config *conf)
     : m_config (conf)
     , m_hb_service (*this)
     , lock ()
@@ -286,7 +286,7 @@ namespace cubhb
 	return ER_FAILED;
       }
 
-    error_code = start_server (m_config.get_port ());
+    error_code = start_server (m_config->get_port ());
     if (error_code != NO_ERROR)
       {
 	MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, error_code, 0);
@@ -311,6 +311,8 @@ namespace cubhb
     ui_nodes.clear ();
 
     ping_hosts.clear ();
+
+    delete m_config;
 
     pthread_mutex_destroy (&lock);
   }
@@ -526,11 +528,11 @@ namespace cubhb
   cluster::is_heartbeat_received_from_all ()
   {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
-    std::chrono::milliseconds heartbeat_confirm_time (m_config.get_heartbeat_interval ());
+    std::chrono::milliseconds heartbeat_interval (m_config->get_heartbeat_interval ());
 
     for (node_entry *node : nodes)
       {
-	if (myself != node && ((now - node->last_recv_hbtime) > heartbeat_confirm_time))
+	if (myself != node && ((now - node->last_recv_hbtime) > heartbeat_interval))
 	  {
 	    return false;
 	  }
@@ -707,7 +709,7 @@ namespace cubhb
   cluster::init_state ()
   {
     /*
-        node_state ha_state = m_config.get_state ();
+        node_state ha_state = m_config->get_state ();
         if (ha_state != node_state::UNKNOWN)
           {
     	state = ha_state;
@@ -716,7 +718,7 @@ namespace cubhb
 
         if (state != node_state::MASTER)
           {
-    	const char *master_host = m_config.get_master_host ();
+    	const char *master_host = m_config->get_master_host ();
     	if (master_host == NULL)
     	  {
     	    MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_HA_MASTER_HOST));
@@ -772,7 +774,7 @@ namespace cubhb
   {
     std::vector<std::string> hostnames;
 
-    get_config_node_list (m_config.get_node_list (), group_id, hostnames);
+    get_config_node_list (m_config->get_node_list (), group_id, hostnames);
     if (hostnames.empty () || group_id.empty ())
       {
 	// TODO [new slave]
@@ -804,7 +806,7 @@ namespace cubhb
     std::string replica_group_id;
     std::vector<std::string> hostnames;
 
-    get_config_node_list (m_config.get_replica_list (), replica_group_id, hostnames);
+    get_config_node_list (m_config->get_replica_list (), replica_group_id, hostnames);
     if (hostnames.empty ())
       {
 	return NO_ERROR;
@@ -831,7 +833,7 @@ namespace cubhb
   void
   cluster::init_ping_hosts ()
   {
-    const char *ha_ping_hosts = m_config.get_ping_hosts ();
+    const char *ha_ping_hosts = m_config->get_ping_hosts ();
     if (ha_ping_hosts == NULL)
       {
 	return;

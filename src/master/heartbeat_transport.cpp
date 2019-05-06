@@ -35,6 +35,10 @@ namespace cubhb
   int
   request_type::reply (const response_type &response) const
   {
+    if (response.m_buffer.get_read_ptr () == NULL && response.m_buffer.get_size () == 0)
+      {
+	return NO_ERROR;
+      }
     if (m_sfd == INVALID_SOCKET)
       {
 	return ERR_CSS_TCP_DATAGRAM_SOCKET;

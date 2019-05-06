@@ -3387,8 +3387,8 @@ hb_cluster_initialize ()
 {
   if (hb_Cluster == NULL)
     {
-      cubhb::config_file config;
-      hb_Cluster = new cubhb::cluster (config);
+      cubhb::config *conf = new cubhb::config_file ();
+      hb_Cluster = new cubhb::cluster (conf);
     }
 
   pthread_mutex_lock (&hb_Cluster->lock);

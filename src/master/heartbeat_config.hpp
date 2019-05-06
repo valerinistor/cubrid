@@ -41,6 +41,8 @@ namespace cubhb
   class config
   {
     public:
+      virtual ~config () = default;
+
       virtual int get_port () const = 0;
       virtual node_state get_state () const = 0;
       virtual int get_heartbeat_interval () const = 0;
@@ -53,9 +55,7 @@ namespace cubhb
   class config_file : public config
   {
     public:
-      config_file () = default;
-      config_file (config_file &other) = default;
-      config_file &operator= (const config_file &other) = default;
+      ~config_file () override = default;
 
       int get_port () const override;
       node_state get_state () const override;
