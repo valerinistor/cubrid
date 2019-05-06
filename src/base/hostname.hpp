@@ -24,7 +24,9 @@
 #ifndef _HOSTNAME_HPP_
 #define _HOSTNAME_HPP_
 
+#include <arpa/inet.h>
 #include <string>
+#include <netdb.h>
 
 #include "error_code.h"
 #include "packable_object.hpp"
@@ -152,6 +154,54 @@ namespace cubbase
 	  {
 	    return *rhs == *lhs;
 	  }
+      }
+
+      int
+      to_udp_sockaddr (int port, sockaddr *saddr, socklen_t *slen) const
+      {
+	// Construct address for UDP socket
+	sockaddr_in udp_saddr;
+	memset ((void *) &udp_saddr, 0, sizeof (udp_saddr));
+	udp_saddr.sin_family = AF_INET;
+	udp_saddr.sin_port = htons (port);
+
+	int error_code = to_sin_addr (&udp_saddr.sin_addr);
+	if (error_code != NO_ERROR)
+	  {
+	    return error_code;
+	  }
+
+	*slen = sizeof (udp_saddr);
+	memcpy ((void *) saddr, (void *) &udp_saddr, *slen);
+
+	return NO_ERROR;
+      }
+
+      int
+      to_sin_addr (in_addr *addr) const
+      {
+	// First try to convert to the host name as a dotten-decimal number.
+	// Only if that fails do we call gethostbyname.
+	in_addr_t in_addr = inet_addr (as_c_str ());
+	if (in_addr != INADDR_NONE)
+	  {
+	    memcpy ((void *) addr, (void *) &in_addr, sizeof (in_addr));
+	  }
+	else
+	  {
+	    int herr;
+	    char buf[1024];
+	    hostent hent, *hp = NULL;
+
+	    if (gethostbyname_r (as_c_str (), &hent, buf, sizeof (buf), &hp, &herr) != 0 || hp == NULL)
+	      {
+		return ERR_CSS_TCP_HOST_NAME_ERROR;
+	      }
+
+	    memcpy ((void *) addr, (void *) hent.h_addr, hent.h_length);
+	  }
+
+	return NO_ERROR;
       }
 
       // Public functions

@@ -32,6 +32,24 @@
 namespace cubhb
 {
 
+  int
+  request_type::reply (const response_type &response) const
+  {
+    if (m_sfd == INVALID_SOCKET)
+      {
+	return ERR_CSS_TCP_DATAGRAM_SOCKET;
+      }
+
+    ssize_t len = sendto (m_sfd, (void *) response.m_buffer.get_read_ptr (), response.m_buffer.get_size (), 0, m_saddr,
+			  m_saddr_len);
+    if (len <= 0)
+      {
+	return ER_FAILED;
+      }
+
+    return NO_ERROR;
+  }
+
   udp_server::udp_server (int port)
     : m_thread ()
     , m_shutdown (true)
@@ -56,7 +74,7 @@ namespace cubhb
       }
 
     m_shutdown = false;
-    m_thread = std::thread (udp_server::poll_internal, this);
+    m_thread = std::thread (udp_server::poll_func, this);
 
     return NO_ERROR;
   }
@@ -64,6 +82,11 @@ namespace cubhb
   void
   udp_server::stop ()
   {
+    if (m_shutdown)
+      {
+	return;
+      }
+
     close (m_sfd);
     m_sfd = INVALID_SOCKET;
 
@@ -71,32 +94,29 @@ namespace cubhb
     m_thread.join ();
   }
 
-  void
-  udp_server::on_request (const request_type &request) const
-  {
-    get_handler_registry ().handle (request.get_message_type (), request);
-  }
-
-  message_type
-  request_type::get_message_type () const
-  {
-    cubpacking::unpacker unpacker (m_buffer, m_buffer_size);
-
-    message_type m_type;
-    unpacker.unpack_from_int (m_type);
-
-    return m_type;
-  }
-
   int
-  request_type::reply (const response_type &response) const
+  udp_server::remote_call (const cubbase::hostname_type &hostname, const request_type &request) const
   {
+    if (m_shutdown)
+      {
+	return NO_ERROR;
+      }
     if (m_sfd == INVALID_SOCKET)
       {
 	return ERR_CSS_TCP_DATAGRAM_SOCKET;
       }
 
-    ssize_t len = sendto (m_sfd, (void *) response.get_buffer (), response.get_buffer_size (), 0, m_saddr, m_saddr_len);
+    sockaddr saddr;
+    socklen_t saddr_len;
+
+    int error_code = hostname.to_udp_sockaddr (m_port, &saddr, &saddr_len);
+    if (error_code != NO_ERROR)
+      {
+	// MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_TCP_HOST_NAME_ERROR, 1, host);
+	return error_code;
+      }
+
+    ssize_t len = sendto (m_sfd, (void *) request.m_buffer, request.m_buffer_size, 0, &saddr, saddr_len);
     if (len <= 0)
       {
 	return ER_FAILED;
@@ -129,7 +149,7 @@ namespace cubhb
   }
 
   void
-  udp_server::poll_internal (udp_server *arg)
+  udp_server::poll_func (udp_server *arg)
   {
     int error_code;
     sockaddr_in from;
@@ -159,21 +179,61 @@ namespace cubhb
 	  {
 	    from_len = sizeof (from);
 	    buffer_size = recvfrom (sfd, (void *) aligned_buffer, BUFFER_SIZE, 0, (sockaddr *) &from, &from_len);
-	    if (buffer_size > 0)
+	    if (buffer_size <= 0)
 	      {
-		request_type request (arg->m_sfd, aligned_buffer, buffer_size, (sockaddr *) &from, from_len);
-		arg->on_request (request);
+		continue;
 	      }
+
+	    request_type request (arg->m_sfd, aligned_buffer, buffer_size, (sockaddr *) &from, from_len);
+	    arg->on_request (request);
 	  }
       }
   }
 
+  void
+  udp_server::on_request (const request_type &request) const
+  {
+    get_handler_registry ().handle (request);
+  }
+
   static handler_registry Registry;
+  static udp_server *Server = NULL;
 
   handler_registry &
   get_handler_registry ()
   {
     return Registry;
+  }
+
+  int
+  start_server (int port)
+  {
+    if (Server != NULL)
+      {
+	return NO_ERROR;
+      }
+
+    Server = new udp_server (port);
+    return Server->start ();
+  }
+
+  void
+  stop_server ()
+  {
+    if (Server == NULL)
+      {
+	return;
+      }
+
+    Server->stop ();
+    delete Server;
+    Server = NULL;
+  }
+
+  const udp_server &
+  get_server ()
+  {
+    return *Server;
   }
 
 } /* namespace cubhb */

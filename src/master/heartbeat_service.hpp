@@ -24,6 +24,7 @@
 #ifndef _HEARTBEAT_SERVICE_HPP_
 #define _HEARTBEAT_SERVICE_HPP_
 
+#include "heartbeat_config.hpp"
 #include "heartbeat_transport.hpp"
 
 namespace cubhb
@@ -34,10 +35,10 @@ namespace cubhb
   {
     public:
       header ();
-      header (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c);
+      header (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &cluster_);
 
       const bool &is_request () const;
-      //const node_state &get_state () const;
+      const node_state &get_state () const;
       const std::string &get_group_id () const;
       const cubbase::hostname_type &get_orig_hostname () const;
       const cubbase::hostname_type &get_dest_hostname () const;
@@ -48,8 +49,7 @@ namespace cubhb
 
     private:
       bool m_is_request;
-
-      //node_state m_state;
+      node_state m_state;
       std::string m_group_id;
       cubbase::hostname_type m_orig_hostname;
       cubbase::hostname_type m_dest_hostname;
@@ -58,13 +58,14 @@ namespace cubhb
   class heartbeat_service
   {
     public:
-      heartbeat_service ();
+      explicit heartbeat_service (cluster &cluster_);
 
-      int send_heartbeat_request (const cubbase::hostname_type &dest_hostname);
-      void on_hearbeat_request (const header &header_);
+      int send_heartbeat_request (const cubbase::hostname_type &dest_hostname) const;
 
     private:
-      void handle (const request_type &request, response_type &response);
+      void on_hearbeat_request (const request_type &request, response_type &response);
+
+      cluster &m_cluster;
   };
 
 } /* namespace cubhb */

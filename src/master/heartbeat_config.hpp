@@ -27,11 +27,23 @@
 namespace cubhb
 {
 
+  enum node_state
+  {
+    UNKNOWN = 0,
+    SLAVE = 1,
+    TO_BE_MASTER = 2,
+    TO_BE_SLAVE = 3,
+    MASTER = 4,
+    REPLICA = 5,
+    MAX
+  };
+
   class config
   {
     public:
       virtual int get_port () const = 0;
-      virtual int get_state () const = 0;
+      virtual node_state get_state () const = 0;
+      virtual int get_heartbeat_interval () const = 0;
       virtual const char *get_master_host () const = 0;
       virtual const char *get_node_list () const = 0;
       virtual const char *get_replica_list () const = 0;
@@ -46,7 +58,8 @@ namespace cubhb
       config_file &operator= (const config_file &other) = default;
 
       int get_port () const override;
-      int get_state () const override;
+      node_state get_state () const override;
+      int get_heartbeat_interval () const override;
       const char *get_master_host () const override;
       const char *get_node_list () const override;
       const char *get_replica_list () const override;

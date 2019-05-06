@@ -1191,7 +1191,7 @@ main (int argc, char **argv)
 #if !defined(WINDOWS)
   if (envvar_get ("NO_DAEMON") == NULL)
     {
-      //css_daemon_start ();
+      css_daemon_start ();
     }
 #endif
 

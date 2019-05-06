@@ -30,7 +30,7 @@ namespace cubhb
 
   header::header ()
     : m_is_request (false)
-      //, m_state (node_state::UNKNOWN)
+    , m_state (node_state::UNKNOWN)
     , m_group_id ()
     , m_orig_hostname ()
     , m_dest_hostname ()
@@ -38,16 +38,16 @@ namespace cubhb
     //
   }
 
-  header::header (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &c)
+  header::header (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &cluster_)
     : m_is_request (is_request)
-      //, m_state (c.get_state ())
-    , m_group_id (c.get_group_id ())
+    , m_state (cluster_.get_state ())
+    , m_group_id (cluster_.get_group_id ())
     , m_orig_hostname ()
     , m_dest_hostname (dest_hostname)
   {
-    if (c.get_myself_node () != NULL)
+    if (cluster_.get_myself_node () != NULL)
       {
-	m_orig_hostname = c.get_myself_node ()->get_hostname ();
+	m_orig_hostname = cluster_.get_myself_node ()->get_hostname ();
       }
   }
 
@@ -57,11 +57,11 @@ namespace cubhb
     return m_is_request;
   }
 
-  /*  const node_state &
-    header::get_state () const
-    {
-      return m_state;
-    }*/
+  const node_state &
+  header::get_state () const
+  {
+    return m_state;
+  }
 
   const std::string &
   header::get_group_id () const
@@ -85,7 +85,7 @@ namespace cubhb
   header::get_packed_size (cubpacking::packer &serializator, std::size_t start_offset) const
   {
     size_t size = serializator.get_packed_bool_size (start_offset); // m_is_request
-    //size += serializator.get_packed_int_size (size); // m_state
+    size += serializator.get_packed_int_size (size); // m_state
     size += serializator.get_packed_string_size (m_group_id, size);
     size += m_orig_hostname.get_packed_size (serializator, size);
     size += m_dest_hostname.get_packed_size (serializator, size);
@@ -97,7 +97,7 @@ namespace cubhb
   header::pack (cubpacking::packer &serializator) const
   {
     serializator.pack_bool (m_is_request);
-    //serializator.pack_to_int (m_state);
+    serializator.pack_to_int (m_state);
     serializator.pack_string (m_group_id);
     m_orig_hostname.pack (serializator);
     m_dest_hostname.pack (serializator);
@@ -107,39 +107,57 @@ namespace cubhb
   header::unpack (cubpacking::unpacker &deserializator)
   {
     deserializator.unpack_bool (m_is_request);
-    //deserializator.unpack_from_int (m_state);
+    deserializator.unpack_from_int (m_state);
     deserializator.unpack_string (m_group_id);
     m_orig_hostname.unpack (deserializator);
     m_dest_hostname.unpack (deserializator);
   }
 
-  heartbeat_service::heartbeat_service ()
+  heartbeat_service::heartbeat_service (cluster &cluster_)
+    : m_cluster (cluster_)
   {
-    handler_registry::handler_type handler = std::bind (&heartbeat_service::handle, std::ref (*this),
+    handler_registry::handler_type handler = std::bind (&heartbeat_service::on_hearbeat_request, std::ref (*this),
 	std::placeholders::_1, std::placeholders::_2);
 
     get_handler_registry ().register_handler (HEARTBEAT, handler);
   }
 
   int
-  heartbeat_service::send_heartbeat_request (const cubbase::hostname_type &dest_hostname)
+  heartbeat_service::send_heartbeat_request (const cubbase::hostname_type &dest_hostname) const
   {
+    header header_ (true, dest_hostname, m_cluster);
+    cubmem::extensible_block buffer;
+    cubpacking::packer packer;
+
+    packer.set_buffer_and_pack_all (buffer, header_);
+
+    const request_type request (buffer.get_read_ptr (), buffer.get_size ());
+
+    const udp_server &server = get_server ();
+    int error_code = server.remote_call (dest_hostname, request);
+    if (error_code != NO_ERROR)
+      {
+	return error_code;
+      }
+
     return NO_ERROR;
   }
 
   void
-  heartbeat_service::on_hearbeat_request (const header &header_)
+  heartbeat_service::on_hearbeat_request (const request_type &request, response_type &response)
   {
+    header header_req;
+    request.get_body (header_req);
 
-  }
+    m_cluster.on_hearbeat_request (header_req, (const sockaddr_in *) request.get_saddr (), request.get_saddr_len ());
 
-  void
-  heartbeat_service::handle (const request_type &request, response_type &response)
-  {
-    header header_;
-    request.get_body (header_);
-
-    on_hearbeat_request (header_);
+    // must send heartbeat response in order to avoid split-brain
+    // when heartbeat configuration changed
+    if (header_req.is_request () && !m_cluster.hide_to_demote)
+      {
+	header header_resp (false, header_req.get_orig_hostname (), m_cluster);
+	response.set_body (HEARTBEAT, header_resp);
+      }
   }
 
 } /* namespace cubhb */

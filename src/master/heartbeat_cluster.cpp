@@ -25,6 +25,7 @@
 
 #include "master_heartbeat.hpp"
 #include "master_util.h"
+#include "string_buffer.hpp"
 #if defined (LINUX)
 #include "tcp.h"
 #else
@@ -47,7 +48,7 @@ namespace cubhb
     , state (node_state::UNKNOWN)
     , score (0)
     , heartbeat_gap (0)
-    , last_recv_hbtime {0, 0}
+    , last_recv_hbtime (std::chrono::system_clock::time_point ())
   {
     //
   }
@@ -58,10 +59,8 @@ namespace cubhb
     , state (other.state)
     , score (other.score)
     , heartbeat_gap (other.heartbeat_gap)
-    , last_recv_hbtime ()
+    , last_recv_hbtime (other.last_recv_hbtime)
   {
-    last_recv_hbtime.tv_sec = other.last_recv_hbtime.tv_usec;
-    last_recv_hbtime.tv_usec = other.last_recv_hbtime.tv_usec;
   }
 
   node_entry &
@@ -72,8 +71,7 @@ namespace cubhb
     state = other.state;
     score = other.score;
     heartbeat_gap = other.heartbeat_gap;
-    last_recv_hbtime.tv_sec = other.last_recv_hbtime.tv_sec;
-    last_recv_hbtime.tv_usec = other.last_recv_hbtime.tv_usec;
+    last_recv_hbtime = other.last_recv_hbtime;
 
     return *this;
   }
@@ -82,6 +80,12 @@ namespace cubhb
   node_entry::get_hostname () const
   {
     return hostname;
+  }
+
+  bool
+  node_entry::is_time_initialized () const
+  {
+    return last_recv_hbtime != std::chrono::system_clock::time_point ();
   }
 
   size_t
@@ -139,7 +143,7 @@ namespace cubhb
   }
 
   ui_node::ui_node (const cubbase::hostname_type &hostname, const std::string &group_id, const sockaddr_in &sockaddr,
-		    int v_result)
+		    ui_node_result v_result)
     : hostname (hostname)
     , group_id (group_id)
     , saddr ()
@@ -163,9 +167,8 @@ namespace cubhb
 
   cluster::cluster (config &conf)
     : m_config (conf)
-    , m_hb_service ()
+    , m_hb_service (*this)
     , lock ()
-    , sfd (INVALID_SOCKET)
     , state (node_state ::UNKNOWN)
     , group_id ()
     , hostname ()
@@ -184,8 +187,8 @@ namespace cubhb
 
   cluster::cluster (const cluster &other)
     : m_config (other.m_config)
+    , m_hb_service (*this)
     , lock ()
-    , sfd (other.sfd)
     , state (other.state)
     , group_id (other.group_id)
     , hostname (other.hostname)
@@ -207,7 +210,6 @@ namespace cubhb
   {
     m_config = other.m_config;
     memcpy (&lock, &other.lock, sizeof (pthread_mutex_t));
-    sfd = other.sfd;
     state = other.state;
     group_id = other.group_id;
     hostname = other.hostname;
@@ -282,6 +284,12 @@ namespace cubhb
     if (!valid_ping_host_exists)
       {
 	return ER_FAILED;
+      }
+
+    error_code = start_server (m_config.get_port ());
+    if (error_code != NO_ERROR)
+      {
+	MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, error_code, 0);
       }
 
     return error_code;
@@ -361,31 +369,6 @@ namespace cubhb
     return NO_ERROR;
   }
 
-  int
-  cluster::listen ()
-  {
-    sfd = socket (AF_INET, SOCK_DGRAM, 0);
-    if (sfd < 0)
-      {
-	MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_TCP_DATAGRAM_SOCKET, 0);
-	return ERR_CSS_TCP_DATAGRAM_SOCKET;
-      }
-
-    sockaddr_in udp_sockaddr;
-    memset ((void *) &udp_sockaddr, 0, sizeof (udp_sockaddr));
-    udp_sockaddr.sin_family = AF_INET;
-    udp_sockaddr.sin_addr.s_addr = htonl (INADDR_ANY);
-    udp_sockaddr.sin_port = htons (m_config.get_port ());
-
-    if (bind (sfd, (sockaddr *) &udp_sockaddr, sizeof (udp_sockaddr)) < 0)
-      {
-	MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_TCP_DATAGRAM_BIND, 0);
-	return ERR_CSS_TCP_DATAGRAM_BIND;
-      }
-
-    return NO_ERROR;
-  }
-
   void
   cluster::stop ()
   {
@@ -396,8 +379,7 @@ namespace cubhb
 
     destroy ();
 
-    close (sfd);
-    sfd = INVALID_SOCKET;
+    stop_server ();
   }
 
   const cubbase::hostname_type &
@@ -439,7 +421,91 @@ namespace cubhb
   }
 
   void
-  cluster::request_heartbeat_from_all ()
+  cluster::on_hearbeat_request (const header &header_, const sockaddr_in *from, socklen_t from_len)
+  {
+    pthread_mutex_lock (&lock);
+    if (shutdown)
+      {
+	pthread_mutex_unlock (&lock);
+	return;
+      }
+
+    /* validate receive message */
+    if (hostname != header_.get_dest_hostname ())
+      {
+	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "hostname mismatch. (host_name:{%s}, dest_host_name:{%s}).\n",
+			     hostname.as_c_str (), header_.get_dest_hostname ().as_c_str ());
+	pthread_mutex_unlock (&lock);
+	return;
+      }
+
+    ui_node_result result = is_heartbeat_valid (header_.get_orig_hostname (), header_.get_group_id (), from);
+    if (result != VALID_NODE)
+      {
+	ui_node *ui_node = find_ui_node (header_.get_orig_hostname (), header_.get_group_id (), *from);
+	if (ui_node && ui_node->v_result != result)
+	  {
+	    remove_ui_node (ui_node);
+	  }
+
+	if (ui_node == NULL)
+	  {
+	    char *ipv4_p;
+	    string_buffer sb;
+	    ipv4_p = (char *) &from->sin_addr.s_addr;
+
+	    sb ("Receive heartbeat from unidentified host. (host_name:'%s', group:'%s', ip_addr:'%u.%u.%u.%u', state:'%s')",
+		header_.get_orig_hostname ().as_c_str (), header_.get_group_id ().c_str (), (unsigned char) (ipv4_p[0]),
+		(unsigned char) (ipv4_p[1]), (unsigned char) (ipv4_p[2]), (unsigned char) (ipv4_p[3]),
+		hb_valid_result_string (result));
+
+	    MASTER_ER_SET (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_HB_NODE_EVENT, 1, sb.get_buffer ());
+
+	    insert_ui_node (header_.get_orig_hostname (), header_.get_group_id (), *from, result);
+	  }
+	else
+	  {
+	    ui_node->set_last_recv_time_to_now ();
+	  }
+      }
+
+    // if heartbeat group id is mismatch, ignore heartbeat
+    if (group_id != header_.get_group_id ())
+      {
+	pthread_mutex_unlock (&lock);
+	return;
+      }
+
+    bool is_state_changed = false;
+    node_entry *node = find_node_except_me (header_.get_orig_hostname ());
+    if (node != NULL)
+      {
+	if (node->state == node_state::MASTER && node->state != header_.get_state ())
+	  {
+	    is_state_changed = true;
+	  }
+
+	node->state = header_.get_state ();
+	node->heartbeat_gap = std::max (0, (node->heartbeat_gap - 1));
+	node->last_recv_hbtime = std::chrono::system_clock::now ();
+      }
+    else
+      {
+	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "receive heartbeat have unknown host_name. (host_name:{%s}).\n",
+			     header_.get_orig_hostname ().as_c_str ());
+      }
+
+    pthread_mutex_unlock (&lock);
+
+    if (is_state_changed)
+      {
+	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "peer node state has been changed.");
+	hb_cluster_job_set_expire_and_reorder (HB_CJOB_CALC_SCORE, HB_JOB_TIMER_IMMEDIATELY);
+      }
+  }
+
+  void
+  cluster::send_heartbeat_to_all ()
   {
     for (node_entry *node : nodes)
       {
@@ -451,6 +517,74 @@ namespace cubhb
 	m_hb_service.send_heartbeat_request (node->get_hostname ());
 	node->heartbeat_gap++;
       }
+  }
+
+  /**
+   * @return: Whether current node received heartbeat from all node
+   */
+  bool
+  cluster::is_heartbeat_received_from_all ()
+  {
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+    std::chrono::milliseconds heartbeat_confirm_time (m_config.get_heartbeat_interval ());
+
+    for (node_entry *node : nodes)
+      {
+	if (myself != node && ((now - node->last_recv_hbtime) > heartbeat_confirm_time))
+	  {
+	    return false;
+	  }
+      }
+
+    return true;
+  }
+
+  ui_node_result
+  cluster::is_heartbeat_valid (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
+			       const sockaddr_in *from) const
+  {
+    node_entry *node = find_node_except_me (node_hostname);
+    if (node == NULL)
+      {
+	return UNIDENTIFIED_NODE;
+      }
+
+    if (group_id != node_group_id)
+      {
+	return GROUP_NAME_MISMATCH;
+      }
+
+    in_addr sin_addr;
+    int error_code = node_hostname.to_sin_addr (&sin_addr);
+    if (error_code == NO_ERROR)
+      {
+	if (memcmp ((void *) &sin_addr, (void *) &from->sin_addr, sizeof (in_addr)) != 0)
+	  {
+	    return IP_ADDR_MISMATCH;
+	  }
+      }
+    else
+      {
+	return CANNOT_RESOLVE_HOST;
+      }
+
+    return VALID_NODE;
+  }
+
+  node_entry *
+  cluster::find_node_except_me (const cubbase::hostname_type &node_hostname) const
+  {
+    for (node_entry *node : nodes)
+      {
+	if (node->get_hostname () != node_hostname || hostname == node_hostname)
+	  {
+	    continue;
+	  }
+
+	return node;
+      }
+
+    return NULL;
   }
 
   void
@@ -497,10 +631,10 @@ namespace cubhb
 
   ui_node *
   cluster::insert_ui_node (const cubbase::hostname_type &node_hostname, const std::string &node_group_id,
-			   const sockaddr_in &sockaddr, const int v_result)
+			   const sockaddr_in &sockaddr, const ui_node_result v_result)
   {
-    assert (v_result == HB_VALID_UNIDENTIFIED_NODE || v_result == HB_VALID_GROUP_NAME_MISMATCH
-	    || v_result == HB_VALID_IP_ADDR_MISMATCH || v_result == HB_VALID_CANNOT_RESOLVE_HOST);
+    assert (v_result == UNIDENTIFIED_NODE || v_result == GROUP_NAME_MISMATCH
+	    || v_result == IP_ADDR_MISMATCH || v_result == CANNOT_RESOLVE_HOST);
 
     ui_node *node = find_ui_node (node_hostname, node_group_id, sockaddr);
     if (node)
@@ -573,7 +707,7 @@ namespace cubhb
   cluster::init_state ()
   {
     /*
-        node_state ha_state = (node_state) m_config.get_state ();
+        node_state ha_state = m_config.get_state ();
         if (ha_state != node_state::UNKNOWN)
           {
     	state = ha_state;

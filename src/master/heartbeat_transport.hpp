@@ -43,41 +43,53 @@ namespace cubhb
       // TODO
   };
 
-  class response_type
-  {
-    public:
-      response_type ()
-	: m_buffer (NULL)
-	, m_buffer_size (0)
-      {
-	//
-      }
-
-      const char *
-      get_buffer () const
-      {
-	return m_buffer;
-      }
-
-      std::size_t
-      get_buffer_size () const
-      {
-	return m_buffer_size;
-      }
-
-    private:
-      const char *m_buffer;
-      std::size_t m_buffer_size;
-  };
-
   enum message_type
   {
     HEARTBEAT,
   };
 
+  class response_type
+  {
+    public:
+      response_type ()
+	: m_buffer ()
+      {
+	//
+      }
+
+      template <typename T>
+      void set_body (message_type type, T &t)
+      {
+	cubpacking::packer packer;
+
+	size_t total_size = t.get_packed_size (packer, 0);
+	m_buffer.extend_to (total_size + packer.get_packed_int_size (0));
+
+	packer.set_buffer (m_buffer.get_ptr (), total_size);
+
+	packer.pack_to_int (type);
+	packer.pack_overloaded (t);
+      }
+
+    private:
+      friend class request_type;
+
+      cubmem::extensible_block m_buffer;
+  };
+
   class request_type
   {
     public:
+      request_type (const char *buffer, std::size_t buffer_size)
+	: m_sfd (INVALID_SOCKET)
+	, m_saddr (NULL)
+	, m_saddr_len (0)
+	, m_buffer (buffer)
+	, m_buffer_size (buffer_size)
+      {
+	//
+      }
+
       request_type (SOCKET sfd, const char *buffer, std::size_t buffer_size, const sockaddr *saddr, socklen_t saddr_len)
 	: m_sfd (sfd)
 	, m_saddr (saddr)
@@ -88,14 +100,42 @@ namespace cubhb
 	//
       }
 
-      message_type get_message_type () const;
+      message_type
+      get_message_type () const
+      {
+	cubpacking::unpacker unpacker (m_buffer, m_buffer_size);
+	message_type type;
+	unpacker.unpack_from_int (type);
+
+	return type;
+      }
 
       template <typename T>
-      void get_body (T &t) const;
+      void get_body (T &t) const
+      {
+	cubpacking::unpacker unpacker (m_buffer, m_buffer_size);
+
+	message_type type;
+	unpacker.unpack_from_int (type);
+	unpacker.unpack_overloaded (t);
+      }
 
       int reply (const response_type &request) const;
 
+      const sockaddr *
+      get_saddr () const
+      {
+	return m_saddr;
+      }
+      socklen_t
+      get_saddr_len () const
+      {
+	return m_saddr_len;
+      }
+
     private:
+      friend class udp_server;
+
       SOCKET m_sfd;
       const sockaddr *m_saddr;
       const socklen_t m_saddr_len;
@@ -110,20 +150,27 @@ namespace cubhb
       explicit udp_server (int port);
       ~udp_server ();
 
+      udp_server (const udp_server &other) = delete; // Copy c-tor
+      udp_server &operator= (const udp_server &other) = delete; // Copy assignment
+
+      udp_server (udp_server &&other) = delete; // Move c-tor
+      udp_server &operator= (udp_server &&other) = delete; // Move assignment
+
       int start ();
       void stop ();
 
-      void on_request (const request_type &request) const;
+      int remote_call (const cubbase::hostname_type &hostname, const request_type &request) const;
 
     private:
       std::thread m_thread;
       bool m_shutdown;
-
       int m_port;
       SOCKET m_sfd;
 
       int listen ();
-      static void poll_internal (udp_server *arg);
+      static void poll_func (udp_server *arg);
+
+      void on_request (const request_type &request) const;
   };
 
   class handler_registry
@@ -142,9 +189,9 @@ namespace cubhb
 	m_handlers.emplace (m_type, handler);
       }
 
-      void handle (message_type m_type, const request_type &request) const
+      void handle (const request_type &request) const
       {
-	auto found = m_handlers.find (m_type);
+	auto found = m_handlers.find (request.get_message_type ());
 	if (found == m_handlers.end ())
 	  {
 	    return;
@@ -163,21 +210,11 @@ namespace cubhb
       handlers_type m_handlers;
   };
 
+  int start_server (int port);
+  void stop_server ();
+  const udp_server &get_server ();
+
   handler_registry &get_handler_registry ();
-
-} /* namespace cubhb */
-
-namespace cubhb
-{
-
-  template <typename T>
-  void
-  request_type::get_body (T &t) const
-  {
-    // // TODO [new slave]
-    cubpacking::unpacker unpacker (m_buffer, m_buffer_size);
-    t.unpack (unpacker);
-  }
 
 } /* namespace cubhb */
 

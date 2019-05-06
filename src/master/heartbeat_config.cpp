@@ -28,10 +28,16 @@
 namespace cubhb
 {
 
-  int
+  node_state
   config_file::get_state () const
   {
-    return prm_get_integer_value (PRM_ID_HA_STATE);
+    return (node_state) prm_get_integer_value (PRM_ID_HA_STATE);
+  }
+
+  int
+  config_file::get_heartbeat_interval () const
+  {
+    return prm_get_integer_value (PRM_ID_HA_HEARTBEAT_INTERVAL_IN_MSECS);
   }
 
   const char *
