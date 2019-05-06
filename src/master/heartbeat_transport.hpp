@@ -63,8 +63,9 @@ namespace cubhb
 	cubpacking::packer packer;
 
 	size_t total_size = t.get_packed_size (packer, 0) + packer.get_packed_int_size (0);
-	packer.set_buffer (m_buffer.get_ptr (), total_size);
+	m_buffer.extend_to (total_size);
 
+	packer.set_buffer (m_buffer.get_ptr (), total_size);
 	packer.pack_to_int (type);
 	packer.pack_overloaded (t);
       }
@@ -203,7 +204,7 @@ namespace cubhb
       }
 
     private:
-      using handlers_type = std::map<message_type, const handler_type &>;
+      using handlers_type = std::map<message_type, const handler_type>;
 
       handlers_type m_handlers;
   };
