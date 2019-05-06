@@ -1294,9 +1294,8 @@ hb_cluster_calc_score (void)
        * times, (or sufficient time has been elapsed from the last received heartbeat message time), this node does not
        * know what other node state is. */
       if (node->heartbeat_gap > prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP)
-	  || (!node->is_time_initialized () && ((now - node->last_recv_hbtime) > calc_score_interval)))
+	  || (node->is_time_initialized () && ((now - node->last_recv_hbtime) > calc_score_interval)))
 	{
-	  // TODO [new slave] is_time_initialized
 	  node->heartbeat_gap = 0;
 	  node->state = cubhb::node_state::UNKNOWN;
 	  node->last_recv_hbtime = std::chrono::system_clock::time_point ();
