@@ -129,7 +129,13 @@ namespace cubhb
     cubmem::extensible_block buffer;
     cubpacking::packer packer;
 
-    packer.set_buffer_and_pack_all (buffer, header_);
+    size_t total_size = header_.get_packed_size (packer, 0);
+    buffer.extend_to (total_size + packer.get_packed_int_size (0));
+
+    packer.set_buffer (buffer.get_ptr (), total_size);
+
+    packer.pack_to_int (HEARTBEAT);
+    packer.pack_overloaded (header_);
 
     const request_type request (buffer.get_read_ptr (), buffer.get_size ());
 
