@@ -3387,7 +3387,8 @@ hb_cluster_initialize ()
   if (hb_Cluster == NULL)
     {
       cubhb::config *conf = new cubhb::config_file ();
-      hb_Cluster = new cubhb::cluster (conf);
+      cubhb::transport *udp_server = new cubhb::udp_server (conf->get_port ());
+      hb_Cluster = new cubhb::cluster (conf, udp_server);
     }
 
   pthread_mutex_lock (&hb_Cluster->lock);
@@ -4154,7 +4155,7 @@ hb_get_node_info_string (char **str, bool verbose_yn)
   p = (char *) (*str);
   last = p + buf_size;
 
-  p += snprintf (p, MAX ((last - p), 0), HA_NODE_INFO_FORMAT_STRING, hb_Cluster->hostname.as_c_str (),
+  p += snprintf (p, MAX ((last - p), 0), HA_NODE_INFO_FORMAT_STRING, hb_Cluster->get_hostname ().as_c_str (),
 		 hb_node_state_string (hb_Cluster->state));
 
   for (cubhb::node_entry *node : hb_Cluster->nodes)
@@ -4965,7 +4966,7 @@ hb_help_sprint_nodes_info (char *buffer, int max_length)
   p += snprintf (p, MAX ((last - p), 0),
 		 "================================================================================\n");
   p += snprintf (p, MAX ((last - p), 0), " * group_id : %s   host_name : %s   state : %s \n",
-		 hb_Cluster->group_id.c_str (), hb_Cluster->hostname.as_c_str (),
+		 hb_Cluster->get_group_id ().c_str (), hb_Cluster->get_hostname ().as_c_str (),
 		 hb_node_state_string (hb_Cluster->state));
   p += snprintf (p, MAX ((last - p), 0),
 		 "--------------------------------------------------------------------------------\n");

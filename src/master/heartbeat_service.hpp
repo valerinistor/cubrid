@@ -31,11 +31,24 @@ namespace cubhb
 {
   class cluster;
 
-  class header : public cubpacking::packable_object
+  class heartbeat_service
   {
     public:
-      header ();
-      header (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &cluster_);
+      heartbeat_service (transport &transport_, cluster &cluster_);
+
+      int send_heartbeat_request (const cubbase::hostname_type &dest_hostname) const;
+      void on_heartbeat_request (const request_type &request, response_type &response);
+
+    private:
+      transport &m_transport;
+      cluster &m_cluster;
+  };
+
+  class heartbeat_arg : public cubpacking::packable_object
+  {
+    public:
+      heartbeat_arg ();
+      heartbeat_arg (bool is_request, const cubbase::hostname_type &dest_hostname, const cluster &cluster_);
 
       const bool &is_request () const;
       const node_state &get_state () const;
@@ -53,19 +66,6 @@ namespace cubhb
       std::string m_group_id;
       cubbase::hostname_type m_orig_hostname;
       cubbase::hostname_type m_dest_hostname;
-  };
-
-  class heartbeat_service
-  {
-    public:
-      explicit heartbeat_service (cluster &cluster_);
-
-      int send_heartbeat_request (const cubbase::hostname_type &dest_hostname) const;
-
-    private:
-      void on_hearbeat_request (const request_type &request, response_type &response);
-
-      cluster &m_cluster;
   };
 
 } /* namespace cubhb */

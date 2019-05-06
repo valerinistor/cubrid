@@ -32,11 +32,82 @@
 namespace cubhb
 {
 
+  body_type::body_type ()
+    : m_use_eb (true)
+    , m_eb ()
+    , m_buf_ptr (NULL)
+    , m_buf_size (0)
+  {
+    //
+  }
+
+  body_type::body_type (const char *b, std::size_t size)
+    : m_use_eb (false)
+    , m_eb ()
+    , m_buf_ptr (b)
+    , m_buf_size (size)
+  {
+    //
+  }
+
+  bool
+  body_type::empty () const
+  {
+    return get_buffer () == NULL || size () == 0;
+  }
+
+  const char *
+  body_type::get_buffer () const
+  {
+    if (m_use_eb)
+      {
+	return m_eb.get_read_ptr ();
+      }
+    else
+      {
+	return m_buf_ptr;
+      }
+  }
+  std::size_t
+  body_type::size () const
+  {
+    if (m_use_eb)
+      {
+	return m_eb.get_size ();
+      }
+    else
+      {
+	return m_buf_size;
+      }
+  }
+
+  request_type::request_type (const cubbase::hostname_type &hostname)
+    : m_sfd (INVALID_SOCKET)
+    , m_saddr (NULL)
+    , m_saddr_len (0)
+    , m_hostname (hostname)
+    , m_body ()
+  {
+    //
+  }
+
+  request_type::request_type (SOCKET sfd, const char *buffer, std::size_t buffer_size, const sockaddr *saddr,
+			      socklen_t saddr_len)
+    : m_sfd (sfd)
+    , m_saddr (saddr)
+    , m_saddr_len (saddr_len)
+    , m_hostname ()
+    , m_body (buffer, buffer_size)
+  {
+    //
+  }
+
   int
   request_type::reply (const response_type &response) const
   {
-    if (response.m_buffer.get_read_ptr () == NULL && response.m_buffer.get_size () == 0)
+    if (response.m_body.empty ())
       {
+	// nothing to send
 	return NO_ERROR;
       }
     if (m_sfd == INVALID_SOCKET)
@@ -44,9 +115,9 @@ namespace cubhb
 	return ERR_CSS_TCP_DATAGRAM_SOCKET;
       }
 
-    ssize_t len = sendto (m_sfd, (void *) response.m_buffer.get_read_ptr (), response.m_buffer.get_size (), 0, m_saddr,
-			  m_saddr_len);
-    if (len <= 0)
+    ssize_t length = sendto (m_sfd, (void *) response.m_body.get_buffer (), response.m_body.size (), 0, m_saddr,
+			     m_saddr_len);
+    if (length <= 0)
       {
 	return ER_FAILED;
       }
@@ -54,8 +125,71 @@ namespace cubhb
     return NO_ERROR;
   }
 
+  const sockaddr *
+  request_type::get_saddr () const
+  {
+    return m_saddr;
+  }
+
+  message_type
+  request_type::get_message_type () const
+  {
+    cubpacking::unpacker unpacker (m_body.get_buffer (), m_body.size ());
+    message_type type;
+    unpacker.unpack_from_int (type);
+
+    return type;
+  }
+
+  const char *
+  request_type::get_body_buffer () const
+  {
+    return m_body.get_buffer ();
+  }
+
+  std::size_t
+  request_type::get_body_size () const
+  {
+    return m_body.size ();
+  }
+
+  const cubbase::hostname_type &
+  request_type::get_hostname () const
+  {
+    return m_hostname;
+  }
+
+  transport::transport ()
+    : m_handlers ()
+  {
+    //
+  }
+
+  void
+  transport::handle_request (const request_type &request) const
+  {
+    auto found = m_handlers.find (request.get_message_type ());
+    if (found == m_handlers.end ())
+      {
+	return;
+      }
+
+    handler_type handler = found->second;
+
+    response_type response;
+    handler (request, response);
+    request.reply (response);
+  }
+
+  void
+  transport::register_handler (message_type m_type, const handler_type &handler)
+  {
+    m_handlers.emplace (m_type, handler);
+  }
+
   udp_server::udp_server (int port)
-    : m_thread ()
+    : transport ()
+    , m_thread ()
     , m_shutdown (true)
     , m_port (port)
     , m_sfd (INVALID_SOCKET)
@@ -99,7 +233,7 @@ namespace cubhb
   }
 
   int
-  udp_server::remote_call (const cubbase::hostname_type &hostname, const request_type &request) const
+  udp_server::send_request (const request_type &request) const
   {
     if (m_shutdown)
       {
@@ -113,15 +247,14 @@ namespace cubhb
     sockaddr saddr;
     socklen_t saddr_len;
 
-    int error_code = hostname.to_udp_sockaddr (m_port, &saddr, &saddr_len);
+    int error_code = request.get_hostname ().to_udp_sockaddr (m_port, &saddr, &saddr_len);
     if (error_code != NO_ERROR)
       {
-	// MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_TCP_HOST_NAME_ERROR, 1, host);
 	return error_code;
       }
 
-    ssize_t len = sendto (m_sfd, (void *) request.m_buffer, request.m_buffer_size, 0, &saddr, saddr_len);
-    if (len <= 0)
+    ssize_t length = sendto (m_sfd, (void *) request.get_body_buffer (), request.get_body_size (), 0, &saddr, saddr_len);
+    if (length <= 0)
       {
 	return ER_FAILED;
       }
@@ -189,55 +322,9 @@ namespace cubhb
 	      }
 
 	    request_type request (arg->m_sfd, aligned_buffer, buffer_size, (sockaddr *) &from, from_len);
-	    arg->on_request (request);
+	    arg->handle_request (request);
 	  }
       }
-  }
-
-  void
-  udp_server::on_request (const request_type &request) const
-  {
-    get_handler_registry ().handle (request);
-  }
-
-  static handler_registry Registry;
-  static udp_server *Server = NULL;
-
-  handler_registry &
-  get_handler_registry ()
-  {
-    return Registry;
-  }
-
-  int
-  start_server (int port)
-  {
-    if (Server != NULL)
-      {
-	return NO_ERROR;
-      }
-
-    Server = new udp_server (port);
-    return Server->start ();
-  }
-
-  void
-  stop_server ()
-  {
-    if (Server == NULL)
-      {
-	return;
-      }
-
-    Server->stop ();
-    delete Server;
-    Server = NULL;
-  }
-
-  const udp_server &
-  get_server ()
-  {
-    return *Server;
   }
 
 } /* namespace cubhb */

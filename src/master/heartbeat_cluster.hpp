@@ -123,7 +123,6 @@ namespace cubhb
 	       ui_node_result v_result);
       ~ui_node () = default;
 
-      void set_last_recv_time_to_now ();
       const cubbase::hostname_type &get_hostname () const;
 
     public: // TODO CBRD-22864 members should be private
@@ -137,7 +136,7 @@ namespace cubhb
   class cluster
   {
     public:
-      explicit cluster (config *conf);
+      cluster (config *conf, transport *transport_);
 
       cluster (const cluster &other); // Copy c-tor
       cluster &operator= (const cluster &other); // Copy assignment
@@ -154,7 +153,7 @@ namespace cubhb
       const std::string &get_group_id () const;
       const node_entry *get_myself_node () const;
 
-      void on_hearbeat_request (const header &header_, const sockaddr_in *from, socklen_t from_len);
+      void on_heartbeat_request (const heartbeat_arg &arg, const sockaddr_in *from);
       void send_heartbeat_to_all ();
       bool is_heartbeat_received_from_all ();
 
@@ -185,14 +184,9 @@ namespace cubhb
 					 const sockaddr_in *from) const;
 
     public: // TODO CBRD-22864 members should be private
-      config *m_config;
-      heartbeat_service m_hb_service;
-
       pthread_mutex_t lock; // TODO CBRD-22864 replace with std::mutex
 
       node_state state;
-      std::string group_id;
-      cubbase::hostname_type hostname;
 
       std::list<node_entry *> nodes;
 
@@ -206,6 +200,14 @@ namespace cubhb
 
       std::list<ui_node *> ui_nodes;
       std::list<ping_host> ping_hosts;
+
+    private:
+      config *m_config;
+      transport *m_transport;
+      heartbeat_service m_hb_service;
+
+      std::string m_group_id;
+      cubbase::hostname_type m_hostname;
   };
 
 } // namespace cubhb
