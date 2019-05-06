@@ -62,9 +62,7 @@ namespace cubhb
       {
 	cubpacking::packer packer;
 
-	size_t total_size = t.get_packed_size (packer, 0);
-	m_buffer.extend_to (total_size + packer.get_packed_int_size (0));
-
+	size_t total_size = t.get_packed_size (packer, 0) + packer.get_packed_int_size (0);
 	packer.set_buffer (m_buffer.get_ptr (), total_size);
 
 	packer.pack_to_int (type);

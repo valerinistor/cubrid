@@ -129,8 +129,8 @@ namespace cubhb
     cubmem::extensible_block buffer;
     cubpacking::packer packer;
 
-    size_t total_size = header_.get_packed_size (packer, 0);
-    buffer.extend_to (total_size + packer.get_packed_int_size (0));
+    size_t total_size = header_.get_packed_size (packer, 0) + packer.get_packed_int_size (0);
+    buffer.extend_to (total_size);
 
     packer.set_buffer (buffer.get_ptr (), total_size);
 
