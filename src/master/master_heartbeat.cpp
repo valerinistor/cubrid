@@ -4689,9 +4689,13 @@ hb_disable_er_log (int reason, const char *msg_fmt, ...)
 cubhb::ping_host::ping_result
 hb_check_ping (const char *host)
 {
-#define PING_COMMAND_FORMAT \
-"ping -w 1 -c 1 %s >/dev/null 2>&1; " \
-"echo $?"
+  // TODO windows
+#if defined (WINDOWS)
+  const char *ping_command_format = "ping -w 1000 -n 1 %s > NUL 2>&1 & echo %errorlevel%";
+#endif
+#if defined (LINUX)
+  const char *ping_command_format = "ping -w 1 -c 1 %s > /dev/null 2>&1; echo $?";
+#endif
 
   char ping_command[256], result_str[16];
   char buf[128];
@@ -4712,7 +4716,7 @@ hb_check_ping (const char *host)
 	}
     }
 
-  snprintf (ping_command, sizeof (ping_command), PING_COMMAND_FORMAT, host);
+  snprintf (ping_command, sizeof (ping_command), ping_command_format, host);
   fp = popen (ping_command, "r");
   if (fp == NULL)
     {
