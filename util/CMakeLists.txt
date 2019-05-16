@@ -68,25 +68,22 @@ endif(UNIX)
 add_dependencies(csql cubridsa cubridcs)
 
 set(CUB_MASTER_SOURCES
+  ${MASTER_DIR}/heartbeat_cluster.cpp
+  ${MASTER_DIR}/heartbeat_service.cpp
   ${MASTER_DIR}/master.c
+  ${MASTER_DIR}/master_heartbeat.cpp
   ${MASTER_DIR}/master_request.c
   ${MASTER_DIR}/master_util.c
   )
-if(UNIX)
-  list(APPEND CUB_MASTER_SOURCES ${MASTER_DIR}/heartbeat_cluster.cpp)
-  list(APPEND CUB_MASTER_SOURCES ${MASTER_DIR}/heartbeat_service.cpp)
-  list(APPEND CUB_MASTER_SOURCES ${MASTER_DIR}/master_heartbeat.cpp)
-  SET_SOURCE_FILES_PROPERTIES(
-	${CUB_MASTER_SOURCES}
-	PROPERTIES LANGUAGE CXX
+
+SET_SOURCE_FILES_PROPERTIES(
+  ${CUB_MASTER_SOURCES}
+  PROPERTIES LANGUAGE CXX
   )
-else(UNIX)
-  SET_SOURCE_FILES_PROPERTIES(
-	${CUB_MASTER_SOURCES}
-	PROPERTIES LANGUAGE CXX
-  )
+
+if(WIN32)
   list(APPEND CUB_MASTER_SOURCES ${CMAKE_BINARY_DIR}/version.rc)
-endif(UNIX)
+endif(WIN32)
 
 
 
