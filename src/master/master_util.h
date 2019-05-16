@@ -28,20 +28,6 @@
 
 #include "connection_defs.h"
 
-#if defined(WINDOWS)
-#define SLEEP_SEC(X)                    Sleep((X) * 1000)
-#define SLEEP_MILISEC(sec, msec)        Sleep((sec) * 1000 + (msec))
-#else
-#define SLEEP_SEC(X)                    sleep(X)
-#define SLEEP_MILISEC(sec, msec)        \
-	do {            \
-		struct timeval sleep_time_val;                \
-		sleep_time_val.tv_sec = sec;                  \
-		sleep_time_val.tv_usec = (msec) * 1000;       \
-		select(0, 0, 0, 0, &sleep_time_val);          \
-	} while(0)
-#endif
-
 // todo: MASTER_ER_... shouldn't be necessary anymore. each thread has own error context
 #define MASTER_ER_SET(...) \
   do { \

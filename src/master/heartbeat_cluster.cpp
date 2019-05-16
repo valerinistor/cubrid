@@ -28,6 +28,8 @@
 #include "master_util.h"
 #include "string_buffer.hpp"
 
+#include <algorithm>
+
 namespace cubhb
 {
   void trim_str (std::string &str);

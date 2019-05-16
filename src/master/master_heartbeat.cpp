@@ -38,8 +38,10 @@
 #include "udp_rpc.hpp"
 #include "utility.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <thread>
 
 #define HB_INFO_STR_MAX         8192
 
@@ -135,9 +137,9 @@ static void hb_resource_send_get_eof (void);
 static bool hb_resource_check_server_log_grow (void);
 
 /* cluster/resource threads */
-static void *hb_thread_cluster_worker (void *arg);
-static void *hb_thread_resource_worker (void *arg);
-static void *hb_thread_check_disk_failure (void *arg);
+static void hb_thread_cluster_worker ();
+static void hb_thread_resource_worker ();
+static void hb_thread_check_disk_failure ();
 
 /* initializer */
 static int hb_cluster_initialize ();
@@ -681,7 +683,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
 	}
       else
 	{
-	  SLEEP_MILISEC (0, HB_JOB_TIMER_WAIT_100_MILLISECOND);
+	  std::this_thread::sleep_for (std::chrono::milliseconds (HB_JOB_TIMER_WAIT_100_MILLISECOND));
 
 	  if (hb_Cluster->is_heartbeat_received_from_all ())
 	    {
@@ -3105,8 +3107,8 @@ hb_resource_receive_get_eof (CSS_CONN_ENTRY *conn)
  *
  *   arg(in):
  */
-static void *
-hb_thread_cluster_worker (void *arg)
+static void
+hb_thread_cluster_worker ()
 {
   HB_JOB_ENTRY *job;
   /* *INDENT-OFF* */
@@ -3125,14 +3127,12 @@ hb_thread_cluster_worker (void *arg)
 	  free_and_init (job);
 	}
 
-      SLEEP_MILISEC (0, 10);
+      std::this_thread::sleep_for (std::chrono::milliseconds (10));
     }
 
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread exit.\n");
 #endif
-
-  return NULL;
 }
 
 /*
@@ -3141,8 +3141,8 @@ hb_thread_cluster_worker (void *arg)
  *
  *   arg(in):
  */
-static void *
-hb_thread_resource_worker (void *arg)
+static void
+hb_thread_resource_worker ()
 {
   HB_JOB_ENTRY *job;
   /* *INDENT-OFF* */
@@ -3161,26 +3161,23 @@ hb_thread_resource_worker (void *arg)
 	  free_and_init (job);
 	}
 
-      SLEEP_MILISEC (0, 10);
+      std::this_thread::sleep_for (std::chrono::milliseconds (10));
     }
 
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread exit.\n");
 #endif
-
-  return NULL;
 }
 
 /*
- * hb_thread_resource_worker -
+ * hb_thread_check_disk_failure -
  *   return: none
  *
  *   arg(in):
  */
-static void *
-hb_thread_check_disk_failure (void *arg)
+static void
+hb_thread_check_disk_failure ()
 {
-  int rv, error;
   int interval;
   INT64 remaining_time_msecs = 0;
   /* *INDENT-OFF* */
@@ -3196,9 +3193,9 @@ hb_thread_check_disk_failure (void *arg)
       interval = prm_get_integer_value (PRM_ID_HA_CHECK_DISK_FAILURE_INTERVAL_IN_SECS);
       if (interval > 0 && remaining_time_msecs <= 0)
 	{
-	  rv = pthread_mutex_lock (&css_Master_socket_anchor_lock);
-	  rv = pthread_mutex_lock (&hb_Cluster->lock);
-	  rv = pthread_mutex_lock (&hb_Resource->lock);
+	  pthread_mutex_lock (&css_Master_socket_anchor_lock);
+	  pthread_mutex_lock (&hb_Cluster->lock);
+	  pthread_mutex_lock (&hb_Resource->lock);
 
 	  if (!hb_Cluster->is_isolated && hb_Resource->state == cubhb::node_state::MASTER)
 	    {
@@ -3212,8 +3209,8 @@ hb_thread_check_disk_failure (void *arg)
 		  pthread_mutex_unlock (&hb_Cluster->lock);
 		  pthread_mutex_unlock (&css_Master_socket_anchor_lock);
 
-		  error = hb_resource_job_queue (HB_RJOB_DEMOTE_START_SHUTDOWN, NULL, HB_JOB_TIMER_IMMEDIATELY);
-		  assert (error == NO_ERROR);
+		  int error_code = hb_resource_job_queue (HB_RJOB_DEMOTE_START_SHUTDOWN, NULL, HB_JOB_TIMER_IMMEDIATELY);
+		  assert (error_code == NO_ERROR);
 
 		  continue;
 		}
@@ -3230,7 +3227,7 @@ hb_thread_check_disk_failure (void *arg)
 	  remaining_time_msecs = interval * 1000;
 	}
 
-      SLEEP_MILISEC (0, HB_DISK_FAILURE_CHECK_TIMER_IN_MSECS);
+      std::this_thread::sleep_for (std::chrono::milliseconds (HB_DISK_FAILURE_CHECK_TIMER_IN_MSECS));
       if (interval > 0)
 	{
 	  remaining_time_msecs -= HB_DISK_FAILURE_CHECK_TIMER_IN_MSECS;
@@ -3240,8 +3237,6 @@ hb_thread_check_disk_failure (void *arg)
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread exit.\n");
 #endif
-
-  return NULL;
 }
 
 /*
@@ -3415,89 +3410,9 @@ hb_resource_job_initialize ()
 static int
 hb_thread_initialize (void)
 {
-  int rv;
-
-  pthread_attr_t thread_attr;
-  size_t ts_size;
-  pthread_t cluster_worker_th;
-  pthread_t resource_worker_th;
-  pthread_t check_disk_failure_th;
-
-  rv = pthread_attr_init (&thread_attr);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_ATTR_INIT, 0);
-      return ER_CSS_PTHREAD_ATTR_INIT;
-    }
-
-  rv = pthread_attr_setdetachstate (&thread_attr, PTHREAD_CREATE_DETACHED);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_ATTR_SETDETACHSTATE, 0);
-      return ER_CSS_PTHREAD_ATTR_SETDETACHSTATE;
-    }
-
-#if defined(AIX)
-  /* AIX's pthread is slightly different from other systems. Its performance highly depends on the pthread's scope and
-   * it's related kernel parameters. */
-  rv = pthread_attr_setscope (&thread_attr,
-			      prm_get_bool_value (PRM_ID_PTHREAD_SCOPE_PROCESS) ? PTHREAD_SCOPE_PROCESS :
-			      PTHREAD_SCOPE_SYSTEM);
-#else /* AIX */
-  rv = pthread_attr_setscope (&thread_attr, PTHREAD_SCOPE_SYSTEM);
-#endif /* AIX */
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_ATTR_SETSCOPE, 0);
-      return ER_CSS_PTHREAD_ATTR_SETSCOPE;
-    }
-
-  /* Sun Solaris allocates 1M for a thread stack, and it is quite enough */
-#if !defined(sun) && !defined(SOLARIS)
-#if defined(_POSIX_THREAD_ATTR_STACKSIZE)
-  rv = pthread_attr_getstacksize (&thread_attr, &ts_size);
-  if (ts_size < (size_t) prm_get_bigint_value (PRM_ID_THREAD_STACKSIZE))
-    {
-      rv = pthread_attr_setstacksize (&thread_attr, prm_get_bigint_value (PRM_ID_THREAD_STACKSIZE));
-      if (rv != 0)
-	{
-	  MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_ATTR_SETSTACKSIZE, 0);
-	  return ER_CSS_PTHREAD_ATTR_SETSTACKSIZE;
-	}
-
-      pthread_attr_getstacksize (&thread_attr, &ts_size);
-    }
-#endif /* _POSIX_THREAD_ATTR_STACKSIZE */
-#endif /* not sun && not SOLARIS */
-
-  rv = pthread_create (&cluster_worker_th, &thread_attr, hb_thread_cluster_worker, NULL);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_CREATE, 0);
-      return ER_CSS_PTHREAD_CREATE;
-    }
-
-  rv = pthread_create (&resource_worker_th, &thread_attr, hb_thread_resource_worker, NULL);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_CREATE, 0);
-      return ER_CSS_PTHREAD_CREATE;
-    }
-
-  rv = pthread_create (&check_disk_failure_th, &thread_attr, hb_thread_check_disk_failure, NULL);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_CREATE, 0);
-      return ER_CSS_PTHREAD_CREATE;
-    }
-
-  /* destroy thread_attribute */
-  rv = pthread_attr_destroy (&thread_attr);
-  if (rv != 0)
-    {
-      MASTER_ER_SET_WITH_OSERROR (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_PTHREAD_ATTR_DESTROY, 0);
-      return ER_CSS_PTHREAD_ATTR_DESTROY;
-    }
+  std::thread (&hb_thread_cluster_worker).detach ();
+  std::thread (&hb_thread_resource_worker).detach ();
+  std::thread (&hb_thread_check_disk_failure).detach ();
 
   return NO_ERROR;
 }
@@ -4235,23 +4150,21 @@ hb_get_process_info_string (char **str, bool verbose_yn)
 static void
 hb_kill_process (pid_t *pids, int count)
 {
-  int error;
-  int i = 0, j = 0;
-  int max_retries, wait_time_in_secs;
-  int signum = SIGTERM;
   bool finished;
+  int signum = SIGTERM;
 
-  max_retries = 20;
-  wait_time_in_secs = 3;
-  for (i = 0; i < max_retries; i++)
+  int max_retries = 20;
+  int wait_time_in_secs = 3;
+
+  for (int i = 0; i < max_retries; i++)
     {
       finished = true;
-      for (j = 0; j < count; j++)
+      for (int j = 0; j < count; j++)
 	{
 	  if (pids[j] > 0)
 	    {
-	      error = kill (pids[j], signum);
-	      if (error && errno == ESRCH)
+	      int error_code = kill (pids[j], signum);
+	      if (error_code && errno == ESRCH)
 		{
 		  pids[j] = 0;
 		}
@@ -4266,10 +4179,10 @@ hb_kill_process (pid_t *pids, int count)
 	  return;
 	}
       signum = 0;
-      SLEEP_MILISEC (wait_time_in_secs, 0);
+      std::this_thread::sleep_for (std::chrono::seconds (wait_time_in_secs));
     }
 
-  for (j = 0; j < count; j++)
+  for (int j = 0; j < count; j++)
     {
       if (pids[j] > 0)
 	{

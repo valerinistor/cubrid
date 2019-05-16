@@ -38,9 +38,7 @@ extern time_t css_Start_time;
 extern int css_Total_server_count;
 extern int css_Total_request_count;
 extern SOCKET_QUEUE_ENTRY *css_Master_socket_anchor;
-#if !defined(WINDOWS)
 extern pthread_mutex_t css_Master_socket_anchor_lock;
-#endif
 
 extern void css_process_info_request (CSS_CONN_ENTRY * conn);
 extern void css_process_stop_shutdown (void);

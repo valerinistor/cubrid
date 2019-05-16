@@ -123,9 +123,8 @@ SOCKET css_Master_socket_fd[2] = { INVALID_SOCKET, INVALID_SOCKET };
 
 /* This is the queue anchor of sockets used by the Master server. */
 SOCKET_QUEUE_ENTRY *css_Master_socket_anchor = NULL;
-#if !defined(WINDOWS)
 pthread_mutex_t css_Master_socket_anchor_lock;
-#endif
+
 pthread_mutex_t css_Master_er_log_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t css_Master_er_log_enable_lock = PTHREAD_MUTEX_INITIALIZER;
 bool css_Master_er_log_enabled = true;
