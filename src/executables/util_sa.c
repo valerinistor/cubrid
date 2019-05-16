@@ -83,11 +83,6 @@
 #define COMMAND_MEMBERS         "members"
 #define COMMAND_GROUPS          "groups"
 
-#if defined(WINDOWS)
-typedef int pid_t;
-#define strtok_r	strtok_s
-#endif
-
 #define BO_DB_FULLNAME          (bo_Dbfullname)
 
 static char bo_Dbfullname[PATH_MAX];

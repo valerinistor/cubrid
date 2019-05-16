@@ -100,6 +100,9 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <assert.h>
+#include <signal.h>
+
+#define SIGKILL SIGTERM
 
 #if !defined (ENOMSG)
 /* not defined errno on Windows */
@@ -227,6 +230,7 @@ extern int poll (struct pollfd *fds, nfds_t nfds, int timeout);
 typedef char *caddr_t;
 
 typedef SSIZE_T ssize_t;
+typedef int pid_t;
 
 #if 0
 struct stat
@@ -282,6 +286,8 @@ typedef struct sigsettype
 int sigfillset (sigset_t * set);
 
 int sigprocmask (int how, sigset_t * set, sigset_t * oldset);
+
+extern int kill (pid_t pid, int sig);
 
 /*
  * MS Windows specific operations

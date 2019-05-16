@@ -54,10 +54,6 @@
 #include "dynamic_array.h"
 #include "heartbeat.h"
 
-#if defined(WINDOWS)
-typedef int pid_t;
-#endif
-
 typedef enum
 {
   SERVICE = 0,

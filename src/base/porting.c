@@ -767,6 +767,54 @@ sigprocmask (int how, sigset_t * set, sigset_t * oldset)
   return (-1);
 }
 
+int
+kill (pid_t pid, int sig)
+{
+  int error_code = 0;
+  if (pid <= 0 || sig < 0)
+    {
+      return error_code;
+    }
+
+  HANDLE phandle = OpenProcess (PROCESS_TERMINATE, FALSE, pid);
+  if (phandle != NULL)
+    {
+      if (sig > 0)
+	{
+	  bool term_ret = TerminateProcess (phandle, 0);
+	  if (!term_ret)
+	    {
+	      int last_error = GetLastError ();
+	      _set_errno (last_error);
+	      error_code = last_error;
+	    }
+
+	  CloseHandle (phandle);
+	}
+      else
+	{
+	  // If sig is 0 (the null signal), error checking is performed but no signal is actually sent
+	  int last_error = GetLastError ();
+	  _set_errno (last_error);
+	  error_code = last_error;
+	}
+    }
+  else
+    {
+      int last_error = GetLastError ();
+      if (last_error == ERROR_SUCCESS)
+	{
+	  // set error to 'no such process'
+	  last_error = ESRCH;
+	}
+
+      _set_errno (last_error);
+      error_code = last_error;
+    }
+
+  return error_code;
+}
+
 /*
  * getpagesize -
  *   return:

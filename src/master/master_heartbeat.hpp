@@ -31,10 +31,6 @@
 #include "porting.h"
 #include "system_parameter.h"
 
-#if defined(WINDOWS)
-typedef int pid_t;
-#endif
-
 #define HB_PING_UNKNOWN_STR          "UNKNOWN"
 #define HB_PING_SUCCESS_STR          "SUCCESS"
 #define HB_PING_USELESS_HOST_STR     "SKIPPED"
