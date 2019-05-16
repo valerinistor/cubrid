@@ -38,22 +38,8 @@
 #include "udp_rpc.hpp"
 #include "utility.h"
 
-#include <arpa/inet.h>
-#include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <chrono>
+#include <ctime>
 
 #define HB_INFO_STR_MAX         8192
 
@@ -80,9 +66,7 @@ static void hb_list_add (HB_LIST **p, HB_LIST *n);
 static void hb_list_remove (HB_LIST *n);
 
 /* jobs */
-static void hb_add_timeval (struct timeval *tv_p, unsigned int msec);
-static int hb_compare_timeval (struct timeval *arg1, struct timeval *arg2);
-static const char *hb_strtime (char *s, unsigned int max, struct timeval *tv_p);
+static const char *hb_strtime (char *s, unsigned int max, std::chrono::system_clock::time_point &tp);
 
 static int hb_job_queue (HB_JOB *jobs, unsigned int job_type, HB_JOB_ARG *arg, unsigned int msec);
 static HB_JOB_ENTRY *hb_job_dequeue (HB_JOB *jobs);
@@ -292,75 +276,6 @@ hb_list_remove (HB_LIST *n)
  */
 
 /*
- * hb_add_timeval() -
- *
- *   return: none
- *   tv_p(in/out):
- *   msec(in):
- */
-static void
-hb_add_timeval (struct timeval *tv_p, unsigned int msec)
-{
-  if (tv_p == NULL)
-    {
-      return;
-    }
-
-  tv_p->tv_sec += (msec / 1000);
-  tv_p->tv_usec += ((msec % 1000) * 1000);
-}
-
-/*
- * hb_compare_timeval() -
- *   return: (1)  if arg1 > arg2
- *           (0)  if arg1 = arg2
- *           (-1) if arg1 < arg2
- *
- *   arg1(in):
- *   arg2(in):
- */
-static int
-hb_compare_timeval (struct timeval *arg1, struct timeval *arg2)
-{
-  if (arg1 == NULL && arg2 == NULL)
-    {
-      return 0;
-    }
-  if (arg1 == NULL)
-    {
-      return -1;
-    }
-  if (arg2 == NULL)
-    {
-      return 1;
-    }
-
-  if (arg1->tv_sec > arg2->tv_sec)
-    {
-      return 1;
-    }
-  else if (arg1->tv_sec == arg2->tv_sec)
-    {
-      if (arg1->tv_usec > arg2->tv_usec)
-	{
-	  return 1;
-	}
-      else if (arg1->tv_usec == arg2->tv_usec)
-	{
-	  return 0;
-	}
-      else
-	{
-	  return -1;
-	}
-    }
-  else
-    {
-      return -1;
-    }
-}
-
-/*
  * hb_strtime() -
  *
  *   return: time string
@@ -369,24 +284,28 @@ hb_compare_timeval (struct timeval *arg1, struct timeval *arg2)
  *   tv_p(in):
  */
 static const char *
-hb_strtime (char *s, unsigned int max, struct timeval *tv_p)
+hb_strtime (char *s, unsigned int max, std::chrono::system_clock::time_point &tp)
 {
-  struct tm hb_tm, *hb_tm_p = &hb_tm;
+  tm *hb_tm_p = NULL;
+  const time_t time = std::chrono::system_clock::to_time_t (tp);
+  const time_t *time_ptr = &time;
+  std::chrono::seconds tp_sec = std::chrono::duration_cast<std::chrono::seconds> (tp.time_since_epoch ());
+  std::chrono::milliseconds tp_msec = std::chrono::duration_cast<std::chrono::milliseconds> (tp.time_since_epoch ());
+  long tp_msec_diff = std::max<long> (0, tp_msec.count () - (tp_sec.count () * 1000));
 
-  if (s == NULL || max < 24 || tv_p == NULL || tv_p->tv_sec == 0)
+  if (s == NULL || max < 24 || tp == std::chrono::system_clock::time_point ())
     {
       goto error_return;
     }
   *s = '\0';
 
-  hb_tm_p = localtime_r (&tv_p->tv_sec, &hb_tm);
-
+  hb_tm_p = std::localtime (time_ptr);
   if (hb_tm_p == NULL)
     {
       goto error_return;
     }
 
-  snprintf (s + strftime (s, (max - 5), "%m/%d/%y %H:%M:%S", hb_tm_p), (max - 1), ".%03ld", tv_p->tv_usec / 1000);
+  snprintf (s + strftime (s, (max - 5), "%m/%d/%y %H:%M:%S", hb_tm_p), (max - 1), ".%03ld", tp_msec_diff);
   s[max - 1] = '\0';
   return (const char *) s;
 
@@ -408,7 +327,6 @@ hb_job_queue (HB_JOB *jobs, unsigned int job_type, HB_JOB_ARG *arg, unsigned int
 {
   HB_JOB_ENTRY **job = NULL;
   HB_JOB_ENTRY *new_job = NULL;
-  struct timeval now;
   int rv;
 
   new_job = (HB_JOB_ENTRY *) malloc (sizeof (HB_JOB_ENTRY));
@@ -418,15 +336,14 @@ hb_job_queue (HB_JOB *jobs, unsigned int job_type, HB_JOB_ARG *arg, unsigned int
       return ER_OUT_OF_VIRTUAL_MEMORY;
     }
 
-  gettimeofday (&now, NULL);
-  hb_add_timeval (&now, msec);
-
   new_job->prev = NULL;
   new_job->next = NULL;
   new_job->type = job_type;
   new_job->func = jobs->job_funcs[job_type];
   new_job->arg = arg;
-  memcpy ((void *) &new_job->expire, (void *) &now, sizeof (struct timeval));
+
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+  new_job->expire = now + std::chrono::milliseconds (msec);
 
   rv = pthread_mutex_lock (&jobs->lock);
   for (job = &jobs->jobs; *job; job = & (*job)->next)
@@ -435,7 +352,7 @@ hb_job_queue (HB_JOB *jobs, unsigned int job_type, HB_JOB_ARG *arg, unsigned int
        * compare expire time of new job and current job
        * until new job's expire is larger than current's
        */
-      if (hb_compare_timeval (& (*job)->expire, &now) <= 0)
+      if ((*job)->expire <= now)
 	{
 	  continue;
 	}
@@ -457,11 +374,8 @@ hb_job_queue (HB_JOB *jobs, unsigned int job_type, HB_JOB_ARG *arg, unsigned int
 static HB_JOB_ENTRY *
 hb_job_dequeue (HB_JOB *jobs)
 {
-  struct timeval now;
   HB_JOB_ENTRY *job;
   int rv;
-
-  gettimeofday (&now, NULL);
 
   rv = pthread_mutex_lock (&jobs->lock);
   if (jobs->shutdown)
@@ -477,7 +391,8 @@ hb_job_dequeue (HB_JOB *jobs)
       return NULL;
     }
 
-  if (hb_compare_timeval (&now, &job->expire) >= 0)
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+  if (now > job->expire)
     {
       hb_list_remove ((HB_LIST *) job);
     }
@@ -505,10 +420,6 @@ hb_job_set_expire_and_reorder (HB_JOB *jobs, unsigned int job_type, unsigned int
 {
   HB_JOB_ENTRY **job = NULL;
   HB_JOB_ENTRY *target_job = NULL;
-  struct timeval now;
-
-  gettimeofday (&now, NULL);
-  hb_add_timeval (&now, msec);
 
   pthread_mutex_lock (&jobs->lock);
 
@@ -533,7 +444,8 @@ hb_job_set_expire_and_reorder (HB_JOB *jobs, unsigned int job_type, unsigned int
       return;
     }
 
-  memcpy ((void *) &target_job->expire, (void *) &now, sizeof (struct timeval));
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+  target_job->expire = now + std::chrono::milliseconds (msec);
 
   /*
    * so now we change target job's turn to adjust sorted queue
@@ -546,7 +458,7 @@ hb_job_set_expire_and_reorder (HB_JOB *jobs, unsigned int job_type, unsigned int
        * compare expiration time of target job and current job
        * until target job's expire is larger than current's
        */
-      if (hb_compare_timeval (& (*job)->expire, &target_job->expire) > 0)
+      if ((*job)->expire > target_job->expire)
 	{
 	  break;
 	}
@@ -1610,7 +1522,7 @@ hb_resource_job_cleanup_all (HB_JOB_ARG *arg)
   resource_job_arg = &job_arg->resource_job_arg;
   resource_job_arg->retries = 0;
   resource_job_arg->max_retries = prm_get_integer_value (PRM_ID_HA_MAX_PROCESS_DEREG_CONFIRM);
-  gettimeofday (&resource_job_arg->ftime, NULL);
+  resource_job_arg->ftime = std::chrono::system_clock::now ();
 
   pthread_mutex_unlock (&hb_Resource->lock);
   pthread_mutex_unlock (&css_Master_socket_anchor_lock);
@@ -1636,7 +1548,6 @@ hb_resource_job_proc_start (HB_JOB_ARG *arg)
   int error, rv;
   char error_string[LINE_MAX] = "";
   pid_t pid;
-  struct timeval now;
   HB_PROC_ENTRY *proc;
   HB_RESOURCE_JOB_ARG *proc_arg = arg ? &arg->resource_job_arg : NULL;
   char *argv[HB_MAX_NUM_PROC_ARGV] = { NULL, };
@@ -1676,8 +1587,9 @@ hb_resource_job_proc_start (HB_JOB_ARG *arg)
 	}
     }
 
-  gettimeofday (&now, NULL);
-  if (HB_GET_ELAPSED_TIME (now, proc->frtime) < HB_PROC_RECOVERY_DELAY_TIME)
+  std::chrono::milliseconds hb_proc_recovery_delay_time (30 * 1000);
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+  if (now - proc->frtime < hb_proc_recovery_delay_time)
     {
       MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "delay the restart of the process. (arg:%p, proc_arg:%p). \n", arg, proc_arg);
 
@@ -1733,7 +1645,7 @@ hb_resource_job_proc_start (HB_JOB_ARG *arg)
     {
       proc->pid = pid;
       proc->state = HB_PSTATE_STARTED;
-      gettimeofday (&proc->stime, NULL);
+      proc->stime = std::chrono::system_clock::now ();
     }
 
   pthread_mutex_unlock (&hb_Resource->lock);
@@ -2058,7 +1970,7 @@ hb_resource_job_demote_start_shutdown (HB_JOB_ARG *arg)
   proc_arg = &job_arg->resource_job_arg;
   proc_arg->retries = 0;
   proc_arg->max_retries = prm_get_integer_value (PRM_ID_HA_MAX_PROCESS_DEREG_CONFIRM);
-  gettimeofday (&proc_arg->ftime, NULL);
+  proc_arg->ftime = std::chrono::system_clock::now ();
 
   error = hb_resource_job_queue (HB_RJOB_DEMOTE_CONFIRM_SHUTDOWN, job_arg,
 				 prm_get_integer_value (PRM_ID_HA_PROCESS_DEREG_CONFIRM_INTERVAL_IN_MSECS));
@@ -2705,7 +2617,7 @@ hb_cleanup_conn_and_start_process (CSS_CONN_ENTRY *conn, SOCKET sfd)
       return;
     }
 
-  gettimeofday (&proc->ktime, NULL);
+  proc->ktime = std::chrono::system_clock::now ();
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "process terminated. (args:{%s}, pid:%d, state:%d). \n", proc->args, proc->pid,
 		       proc->state);
@@ -2726,8 +2638,9 @@ hb_cleanup_conn_and_start_process (CSS_CONN_ENTRY *conn, SOCKET sfd)
 
   if (hb_Resource->state == cubhb::node_state::MASTER && proc->type == HB_PTYPE_SERVER && !hb_Cluster->is_isolated)
     {
-      if (HB_GET_ELAPSED_TIME (proc->ktime, proc->rtime) <
-	  prm_get_integer_value (PRM_ID_HA_UNACCEPTABLE_PROC_RESTART_TIMEDIFF_IN_MSECS))
+      int proc_restart_timediff = prm_get_integer_value (PRM_ID_HA_UNACCEPTABLE_PROC_RESTART_TIMEDIFF_IN_MSECS);
+      std::chrono::milliseconds ha_unacceptable_proc_restart_timediff (proc_restart_timediff);
+      if ((proc->ktime - proc->rtime) < ha_unacceptable_proc_restart_timediff)
 	{
 	  /* demote the current node */
 	  hb_Resource->state = cubhb::node_state::SLAVE;
@@ -2756,7 +2669,7 @@ hb_cleanup_conn_and_start_process (CSS_CONN_ENTRY *conn, SOCKET sfd)
   memcpy ((void *) &proc_arg->args[0], proc->args, sizeof (proc_arg->args));
   proc_arg->retries = 0;
   proc_arg->max_retries = prm_get_integer_value (PRM_ID_HA_MAX_PROCESS_START_CONFIRM);
-  gettimeofday (&proc_arg->ftime, NULL);
+  proc_arg->ftime = std::chrono::system_clock::now ();
 
   proc->state = HB_PSTATE_DEAD;
   proc->server_hang = false;
@@ -2851,7 +2764,7 @@ hb_register_new_process (CSS_CONN_ENTRY *conn)
       else
 	{
 	  proc_state = HB_PSTATE_REGISTERED;	/* first register */
-	  gettimeofday (&proc->frtime, NULL);
+	  proc->frtime = std::chrono::system_clock::now ();
 	}
     }
   else
@@ -2868,7 +2781,7 @@ hb_register_new_process (CSS_CONN_ENTRY *conn)
       proc->state = proc_state;
       proc->sfd = conn->fd;
       proc->conn = conn;
-      gettimeofday (&proc->rtime, NULL);
+      proc->rtime = std::chrono::system_clock::now ();
       proc->changemode_gap = 0;
       proc->server_hang = false;
 
@@ -4301,13 +4214,13 @@ hb_get_process_info_string (char **str, bool verbose_yn)
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_EXEC_PATH_FORMAT_STRING, proc->exec_path);
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_ARGV_FORMAT_STRING, proc->args);
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_REGISTER_TIME_FORMAT_STRING,
-			 hb_strtime (time_str, sizeof (time_str), &proc->rtime));
+			 hb_strtime (time_str, sizeof (time_str), proc->rtime));
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_DEREGISTER_TIME_FORMAT_STRING,
-			 hb_strtime (time_str, sizeof (time_str), &proc->dtime));
+			 hb_strtime (time_str, sizeof (time_str), proc->dtime));
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_SHUTDOWN_TIME_FORMAT_STRING,
-			 hb_strtime (time_str, sizeof (time_str), &proc->ktime));
+			 hb_strtime (time_str, sizeof (time_str), proc->ktime));
 	  p += snprintf (p, MAX ((last - p), 0), HA_PROCESS_START_TIME_FORMAT_STRING,
-			 hb_strtime (time_str, sizeof (time_str), &proc->stime));
+			 hb_strtime (time_str, sizeof (time_str), proc->stime));
 	}
     }
 
@@ -4529,7 +4442,7 @@ hb_deregister_process (HB_PROC_ENTRY *proc)
       return NULL;
     }
 
-  gettimeofday (&proc->dtime, NULL);
+  proc->dtime = std::chrono::system_clock::now ();
 
   job_arg = (HB_JOB_ARG *) malloc (sizeof (HB_JOB_ARG));
   if (job_arg == NULL)
@@ -4543,7 +4456,7 @@ hb_deregister_process (HB_PROC_ENTRY *proc)
   memcpy ((void *) &proc_arg->args[0], proc->args, sizeof (proc_arg->args));
   proc_arg->retries = 0;
   proc_arg->max_retries = prm_get_integer_value (PRM_ID_HA_MAX_PROCESS_DEREG_CONFIRM);
-  gettimeofday (&proc_arg->ftime, NULL);
+  proc_arg->ftime = std::chrono::system_clock::now ();
 
   proc->state = HB_PSTATE_DEREGISTERED;
 
@@ -4813,7 +4726,6 @@ hb_disable_er_log (int reason, const char *msg_fmt, ...)
   char *p, *last;
   const char *event_name;
   char time_str[64];
-  struct timeval curr_time;
   int rv;
 
   rv = pthread_mutex_lock (&css_Master_er_log_enable_lock);
@@ -4843,9 +4755,8 @@ hb_disable_er_log (int reason, const char *msg_fmt, ...)
   p = hb_Nolog_event_msg;
   last = hb_Nolog_event_msg + sizeof (hb_Nolog_event_msg);
 
-  gettimeofday (&curr_time, NULL);
-
-  p += snprintf (p, MAX ((last - p), 0), "[%s][%s]", hb_strtime (time_str, sizeof (time_str), &curr_time), event_name);
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+  p += snprintf (p, MAX ((last - p), 0), "[%s][%s]", hb_strtime (time_str, sizeof (time_str), now), event_name);
 
   if (msg_fmt != NULL)
     {
@@ -5060,8 +4971,13 @@ hb_help_sprint_jobs_info (HB_JOB *jobs, char *buffer, int max_length)
   rv = pthread_mutex_lock (&jobs->lock);
   for (job = jobs->jobs; job; job = job->next)
     {
+      std::chrono::seconds job_sec = std::chrono::duration_cast<std::chrono::seconds> (job->expire.time_since_epoch ());
+      std::chrono::microseconds job_usec = std::chrono::duration_cast<std::chrono::microseconds>
+					   (job->expire.time_since_epoch ());
+      long job_usec_diff = std::max<long> (0, job_usec.count () - (job_sec.count () * 1000000));
+
       p += snprintf (p, MAX ((last - p), 0), "%-10d %-20p %-20p %-10d.%-10d\n", job->type, (void *) job->func,
-		     (void *) job->arg, (unsigned int) job->expire.tv_sec, (unsigned int) job->expire.tv_usec);
+		     (void *) job->arg, (unsigned int) job_sec.count (), (unsigned int) job_usec_diff);
     }
 
   pthread_mutex_unlock (&jobs->lock);

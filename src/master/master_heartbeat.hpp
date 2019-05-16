@@ -31,12 +31,6 @@
 #include "porting.h"
 #include "system_parameter.h"
 
-#if defined (LINUX)
-#include <netinet/in.h>
-#elif defined (WINDOWS)
-#include <winsock2.h>
-#endif
-
 #if defined(WINDOWS)
 typedef int pid_t;
 #endif
@@ -166,8 +160,6 @@ enum HB_NOLOG_REASON
             ((double)(end_time.tv_sec - start_time.tv_sec) * 1000 + \
              (end_time.tv_usec - start_time.tv_usec)/1000.0)
 
-#define HB_PROC_RECOVERY_DELAY_TIME		(30* 1000)	/* milli-second */
-
 #define HB_IPV4_STR_LEN				(16)
 
 /* heartbeat list */
@@ -194,11 +186,11 @@ struct HB_PROC_ENTRY
   char args[HB_MAX_SZ_PROC_ARGS];
   char argv[HB_MAX_NUM_PROC_ARGV][HB_MAX_SZ_PROC_ARGV];
 
-  struct timeval frtime;	/* first registered time */
-  struct timeval rtime;		/* registerd time */
-  struct timeval dtime;		/* deregistered time */
-  struct timeval ktime;		/* shutdown time */
-  struct timeval stime;		/* start time */
+  std::chrono::system_clock::time_point frtime;		/* first registered time */
+  std::chrono::system_clock::time_point rtime;		/* registerd time */
+  std::chrono::system_clock::time_point dtime;		/* deregistered time */
+  std::chrono::system_clock::time_point ktime;		/* shutdown time */
+  std::chrono::system_clock::time_point stime;		/* start time */
 
   unsigned short changemode_rid;
   unsigned short changemode_gap;
@@ -247,8 +239,8 @@ struct hb_resource_job_arg
   unsigned int retries;		/* job retries */
   unsigned int max_retries;	/* job max retries */
 
-  struct timeval ftime;		/* first job execution time */
-  struct timeval ltime;		/* last job execution time */
+  std::chrono::system_clock::time_point ftime;		/* first job execution time */
+  std::chrono::system_clock::time_point ltime;		/* last job execution time */
 };
 
 /* heartbeat job argument */
@@ -270,7 +262,7 @@ struct hb_job_entry
 
   unsigned int type;
 
-  struct timeval expire;
+  std::chrono::system_clock::time_point expire;
 
   HB_JOB_FUNC func;
   HB_JOB_ARG *arg;
