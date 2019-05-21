@@ -27,6 +27,7 @@
 
 #include "config.h"
 #include "log_append.hpp"
+#include "log_consumer.hpp"
 #include "multi_thread_stream.hpp"
 #include "replication_common.hpp"
 #include "replication_master_node.hpp"
@@ -219,6 +220,8 @@ static void css_process_new_client (SOCKET master_fd);
 static void css_process_get_server_ha_mode_request (SOCKET master_fd);
 static void css_process_change_server_ha_mode_request (SOCKET master_fd);
 static void css_process_get_eof_request (SOCKET master_fd);
+static int css_process_master_hostname (void);
+static void css_process_get_stream_position ();
 
 static void css_close_connection_to_master (void);
 static int css_reestablish_connection_to_master (void);
@@ -577,6 +580,9 @@ css_process_master_request (SOCKET master_fd)
       css_process_new_slave (master_fd);
       break;
 #endif
+    case SERVER_GET_STREAM_POSITION:
+      css_process_get_stream_position ();
+      break;
     default:
       /* master do not respond */
       r = -1;
@@ -813,7 +819,7 @@ css_process_get_eof_request (SOCKET master_fd)
 }
 
 // *INDENT-OFF*
-int
+static int
 css_process_master_hostname ()
 {
   int hostname_length, error;
@@ -853,6 +859,22 @@ css_process_master_hostname ()
     }
 
   return NO_ERRORS;
+}
+// *INDENT-ON*
+
+// *INDENT-OFF*
+static void
+css_process_get_stream_position ()
+{
+  cubpacking::packer packer;
+  cubmem::extensible_block buffer;
+
+  cubreplication::slave_node *node = cubreplication::slave_node::get_instance (NULL); // TODO get_instance
+  cubstream::stream_position stream_pos = node->get_log_consumer ().get_stream_position ();
+  packer.set_buffer_and_pack_all (buffer, stream_pos);
+
+  css_send_heartbeat_request (css_Master_conn, SERVER_GET_STREAM_POSITION);
+  css_send_heartbeat_data (css_Master_conn, buffer.get_read_ptr (), buffer.get_size ());
 }
 // *INDENT-ON*
 

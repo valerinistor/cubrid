@@ -28,6 +28,8 @@
 
 #include "cubstream.hpp"
 #include "thread_manager.hpp"
+
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -106,6 +108,8 @@ namespace cubreplication
 
       bool m_is_stopped;
 
+      std::atomic<cubstream::stream_position> m_stream_position;
+
     private:
 
     public:
@@ -118,7 +122,8 @@ namespace cubreplication
 	m_use_daemons (false),
 	m_started_tasks (0),
 	m_apply_task_ready (false),
-	m_is_stopped (false)
+	m_is_stopped (false),
+	m_stream_position (0)
       {
       };
 
@@ -150,7 +155,7 @@ namespace cubreplication
 
       int get_started_task (void)
       {
-        return m_started_tasks;
+	return m_started_tasks;
       }
 
       void wait_for_tasks (void);
@@ -161,6 +166,9 @@ namespace cubreplication
       }
 
       void set_stop (void);
+
+      cubstream::stream_position get_stream_position () const;
+      void set_stream_position (cubstream::stream_position stream_position);
   };
 
 } /* namespace cubreplication */

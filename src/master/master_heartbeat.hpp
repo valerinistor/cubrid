@@ -75,6 +75,7 @@ enum HB_RESOURCE_JOB
   HB_RJOB_CLEANUP_ALL = 7,
   HB_RJOB_CONFIRM_CLEANUP_ALL = 8,
   HB_RJOB_SEND_MASTER_HOSTNAME = 9,
+  HB_RJOB_GET_STREAM_POSITION = 10,
   HB_RJOB_MAX
 };
 
@@ -323,6 +324,7 @@ bool hb_is_registered_process (CSS_CONN_ENTRY *conn, char *args);
 void hb_register_new_process (CSS_CONN_ENTRY *conn);
 void hb_resource_receive_changemode (CSS_CONN_ENTRY *conn);
 void hb_resource_receive_get_eof (CSS_CONN_ENTRY *conn);
+void hb_resource_receive_stream_position (css_conn_entry *conn);
 
 int hb_check_request_eligibility (SOCKET sd);
 void hb_start_deactivate_server_info (void);

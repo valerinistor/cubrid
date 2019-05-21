@@ -18,7 +18,7 @@
  */
 
 /*
- * communication_server_channel.cpp - a communication channel with "connect" function overriden
+ * communication_server_channel.cpp - a communication channel with "connect" function overridden
  *                                    to match the protocol expected by cub_master
  */
 

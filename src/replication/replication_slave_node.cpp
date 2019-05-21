@@ -128,5 +128,11 @@ namespace cubreplication
 #endif
   }
 
+  const log_consumer &
+  slave_node::get_log_consumer () const
+  {
+    return *m_lc;
+  }
+
   slave_node *slave_node::g_instance = NULL;
 } /* namespace cubreplication */

@@ -99,6 +99,9 @@ namespace cubreplication
 		  }
 	      }
 
+	    // update log_consumer stream position
+	    m_lc.set_stream_position (curr_stream_entry->get_stream ()->get_last_committed_pos ());
+
 	    delete curr_stream_entry;
 
 	    m_lc.end_one_task ();
@@ -373,6 +376,29 @@ namespace cubreplication
     m_is_stopped = true;
     ulock.unlock ();
     m_apply_task_cv.notify_one ();
+  }
+
+  cubstream::stream_position
+  log_consumer::get_stream_position () const
+  {
+    return m_stream_position.load ();
+  }
+
+  void
+  log_consumer::set_stream_position (cubstream::stream_position stream_position)
+  {
+    cubstream::stream_position curr_max;
+
+    do
+      {
+	curr_max = m_stream_position.load ();
+	if (curr_max >= stream_position)
+	  {
+	    // max is already stored
+	    break;
+	  }
+      }
+    while (!m_stream_position.compare_exchange_strong (curr_max, stream_position));
   }
 
 } /* namespace cubreplication */

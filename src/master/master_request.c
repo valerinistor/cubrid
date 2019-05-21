@@ -2024,7 +2024,6 @@ css_process_heartbeat_request (CSS_CONN_ENTRY * conn)
 #if !defined(WINDOWS)
   int error, request;
   int rfd = (conn) ? conn->fd : INVALID_SOCKET;
-  char *buffer = NULL;
 
   error = css_receive_heartbeat_request (conn, &request);
   if (error == NO_ERRORS)
@@ -2043,6 +2042,9 @@ css_process_heartbeat_request (CSS_CONN_ENTRY * conn)
 	case SERVER_GET_EOF:
 	  css_process_get_eof (conn);
 	  break;
+	case SERVER_GET_STREAM_POSITION:
+	  hb_resource_receive_stream_position (conn);
+	  break;
 	default:
 	  MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "receive unexpected request. (request:%d).\n", request);
 	  break;
@@ -2056,8 +2058,6 @@ css_process_heartbeat_request (CSS_CONN_ENTRY * conn)
 #else
   css_cleanup_info_connection (conn);
 #endif
-
-  return;
 }
 
 int

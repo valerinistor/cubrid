@@ -67,6 +67,8 @@ namespace cubreplication
       static void init (const char *hostname);
       static int connect_to_master (const char *master_node_hostname, const int master_node_port_id);
       static void final (void);
+
+      const log_consumer &get_log_consumer () const;
   };
 
 } /* namespace cubreplication */

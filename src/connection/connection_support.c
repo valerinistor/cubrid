@@ -356,7 +356,7 @@ css_net_send_no_block (SOCKET fd, const char *buffer, int size)
 /*
  * css_readn() - read "n" bytes from a descriptor.
  *   return: count of bytes actually read
- *   fd(in): sockert descripter
+ *   fd(in): socket descriptor
  *   ptr(out): buffer
  *   nbytes(in): count of bytes will be read
  *   timeout(in): timeout in milli-second

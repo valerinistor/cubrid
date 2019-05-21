@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "connection_cl.h"
+#include "cubstream.hpp"
 #include "dbi.h"
 #include "environment_variable.h"
 #include "error_context.hpp"
@@ -119,6 +120,7 @@ static void hb_resource_job_demote_confirm_shutdown (HB_JOB_ARG *arg);
 static void hb_resource_job_cleanup_all (HB_JOB_ARG *arg);
 static void hb_resource_job_confirm_cleanup_all (HB_JOB_ARG *arg);
 static void hb_resource_job_send_master_hostname (HB_JOB_ARG *arg);
+static void hb_resource_job_get_stream_position (HB_JOB_ARG *arg);
 
 static void hb_resource_demote_start_shutdown_server_proc (void);
 static bool hb_resource_demote_confirm_shutdown_server_proc (void);
@@ -218,6 +220,7 @@ static HB_JOB_FUNC hb_resource_jobs[] =
   hb_resource_job_cleanup_all,
   hb_resource_job_confirm_cleanup_all,
   hb_resource_job_send_master_hostname,
+  hb_resource_job_get_stream_position,
   NULL
 };
 
@@ -2493,6 +2496,24 @@ hb_resource_job_send_master_hostname (HB_JOB_ARG *arg)
     }
 }
 
+static void
+hb_resource_job_get_stream_position (HB_JOB_ARG *arg)
+{
+  (void) arg;
+
+  for (HB_PROC_ENTRY *proc = hb_Resource->procs; proc != NULL; proc = proc->next)
+    {
+      if (proc->type == HB_PTYPE_SERVER)
+	{
+	  // request stream position from cub_server
+	  css_send_heartbeat_request (proc->conn, SERVER_GET_STREAM_POSITION);
+	}
+    }
+
+  // use same interval as heartbeat
+  hb_resource_job_queue (HB_RJOB_GET_STREAM_POSITION, NULL, HB_DEFAULT_HEARTBEAT_INTERVAL_IN_MSECS);
+}
+
 /*
  * resource process
  */
@@ -3182,6 +3203,29 @@ hb_resource_receive_get_eof (CSS_CONN_ENTRY *conn)
   pthread_mutex_unlock (&hb_Resource->lock);
 }
 
+void
+hb_resource_receive_stream_position (css_conn_entry *conn)
+{
+  cubpacking::packer packer;
+  std::size_t buffer_size = packer.get_packed_bigint_size (0);
+
+  cubmem::extensible_block buffer;
+  buffer.extend_to (buffer_size);
+
+  css_error_code error_code = (css_error_code) css_receive_heartbeat_data (conn, buffer.get_ptr (), buffer_size);
+  if (error_code != css_error_code::NO_ERRORS)
+    {
+      return;
+    }
+
+  cubpacking::unpacker unpacker (buffer.get_ptr (), buffer_size);
+
+  cubstream::stream_position stream_pos;
+  unpacker.unpack_bigint (stream_pos);
+
+  MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "received stream position [%lu]", stream_pos);
+}
+
 /*
  * heartbeat worker threads
  */
@@ -3196,9 +3240,7 @@ static void *
 hb_thread_cluster_worker (void *arg)
 {
   HB_JOB_ENTRY *job;
-  /* *INDENT-OFF* */
   cuberr::context er_context (true);
-  /* *INDENT-ON* */
 
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread started. (thread:{%s}, tid:%d).\n", __func__, THREAD_ID ());
@@ -3232,9 +3274,7 @@ static void *
 hb_thread_resource_worker (void *arg)
 {
   HB_JOB_ENTRY *job;
-  /* *INDENT-OFF* */
   cuberr::context er_context (true);
-  /* *INDENT-ON* */
 
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread started. (thread:{%s}, tid:%d).\n", __func__, THREAD_ID ());
@@ -3270,9 +3310,7 @@ hb_thread_check_disk_failure (void *arg)
   int rv, error;
   int interval;
   INT64 remaining_time_msecs = 0;
-  /* *INDENT-OFF* */
   cuberr::context er_context (true);
-  /* *INDENT-ON* */
 
 #if defined (HB_VERBOSE_DEBUG)
   MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "thread started. (thread:{%s}, tid:%d).\n", __func__, THREAD_ID ());
@@ -3483,6 +3521,15 @@ hb_resource_job_initialize ()
 
   /* TODO add other timers */
   error = hb_resource_job_queue (HB_RJOB_SEND_MASTER_HOSTNAME, NULL,
+				 prm_get_integer_value (PRM_ID_HA_INIT_TIMER_IN_MSECS) +
+				 prm_get_integer_value (PRM_ID_HA_FAILOVER_WAIT_TIME_IN_MSECS));
+  if (error != NO_ERROR)
+    {
+      assert (false);
+      return ER_FAILED;
+    }
+
+  error = hb_resource_job_queue (HB_RJOB_GET_STREAM_POSITION, NULL,
 				 prm_get_integer_value (PRM_ID_HA_INIT_TIMER_IN_MSECS) +
 				 prm_get_integer_value (PRM_ID_HA_FAILOVER_WAIT_TIME_IN_MSECS));
   if (error != NO_ERROR)
