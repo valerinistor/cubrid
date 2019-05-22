@@ -718,6 +718,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
 	      free_and_init (arg);
 	    }
 
+	  EXIT_FUNC ();
 	  return;
 	}
     }
@@ -749,6 +750,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
 	  free_and_init (arg);
 	}
 
+      EXIT_FUNC ();
       return;
     }
 
@@ -756,7 +758,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
   if ((hb_Cluster->state == cubhb::node_state::SLAVE)
       && (hb_Cluster->master && hb_Cluster->myself && hb_Cluster->master->priority == hb_Cluster->myself->priority))
     {
-      hb_Cluster->state = cubhb::node_state ::TO_BE_MASTER;
+      hb_Cluster->state = cubhb::node_state::TO_BE_MASTER;
       hb_Cluster->send_heartbeat_to_all ();
 
       pthread_mutex_unlock (&hb_Cluster->lock);
@@ -796,6 +798,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
 	  free_and_init (arg);
 	}
 
+      EXIT_FUNC ();
       return;
     }
 
@@ -813,6 +816,8 @@ calc_end:
     {
       free_and_init (arg);
     }
+
+  EXIT_FUNC ();
 }
 
 /*
@@ -932,7 +937,7 @@ ping_check_cancel:
   if (hb_Cluster->state != cubhb::node_state::MASTER)
     {
       MASTER_ER_SET (ER_NOTIFICATION_SEVERITY, ARG_FILE_LINE, ER_HB_NODE_EVENT, 1, "Failover cancelled by ping check");
-      hb_Cluster->state = cubhb::node_state ::SLAVE;
+      hb_Cluster->state = cubhb::node_state::SLAVE;
     }
   hb_Cluster->send_heartbeat_to_all ();
 
@@ -1297,6 +1302,11 @@ hb_cluster_calc_score (void)
       if (node->heartbeat_gap > prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP)
 	  || (node->is_time_initialized () && ((now - node->last_recv_hbtime) > calc_score_interval)))
 	{
+	  if (node->state == cubhb::node_state::MASTER)
+	    {
+	      MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "master crashed");
+	    }
+
 	  node->heartbeat_gap = 0;
 	  node->state = cubhb::node_state::UNKNOWN;
 	  node->last_recv_hbtime = std::chrono::system_clock::time_point ();
@@ -3223,7 +3233,7 @@ hb_resource_receive_stream_position (css_conn_entry *conn)
   cubstream::stream_position stream_pos;
   unpacker.unpack_bigint (stream_pos);
 
-  MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "received stream position [%lu]", stream_pos);
+  //MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "received stream position [%lu]", stream_pos);
 }
 
 /*
