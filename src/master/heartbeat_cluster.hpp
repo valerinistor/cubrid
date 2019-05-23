@@ -80,6 +80,7 @@ namespace cubhb
 
       const cubbase::hostname_type &get_hostname () const;
       bool is_time_initialized () const;
+      void reset ();
 
     public: // TODO CBRD-22864 members should be private
       cubbase::hostname_type hostname;
@@ -171,6 +172,7 @@ namespace cubhb
       void cleanup_ui_nodes ();
 
       bool check_valid_ping_host ();
+      int calculate_nodes_score ();
 
     private:
       void get_config_node_list (PARAM_ID prm_id, std::string &group, std::vector<std::string> &hostnames) const;

@@ -61,6 +61,14 @@ namespace cubhb
     return last_recv_hbtime != std::chrono::system_clock::time_point ();
   }
 
+  void
+  node_entry::reset ()
+  {
+    heartbeat_gap = 0;
+    state = node_state::UNKNOWN;
+    last_recv_hbtime = std::chrono::system_clock::time_point ();
+  }
+
   ping_host::ping_host (const std::string &hostname)
     : hostname (hostname)
     , result (ping_result::UNKNOWN)
@@ -105,7 +113,7 @@ namespace cubhb
 
   cluster::cluster (ha_server *server)
     : lock ()
-    , state (node_state ::UNKNOWN)
+    , state (node_state::UNKNOWN)
     , nodes ()
     , myself (NULL)
     , master (NULL)
@@ -464,6 +472,71 @@ namespace cubhb
     return valid_ping_host_exists;
   }
 
+  /**
+   * @return: number of master nodes in heartbeat cluster
+   */
+  int
+  cluster::calculate_nodes_score ()
+  {
+    int num_master = 0;
+    short min_score = HB_NODE_SCORE_UNKNOWN;
+
+    assert (myself != NULL);
+    myself->state = state;
+
+    int max_heartbeat_gap = prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP);
+    std::chrono::milliseconds calc_score_interval (prm_get_integer_value (PRM_ID_HA_CALC_SCORE_INTERVAL_IN_MSECS));
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
+
+    for (node_entry *node : nodes)
+      {
+	/* If this node does not receive heartbeat message over than prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP)
+	 * times, (or sufficient time has been elapsed from the last received heartbeat message time),
+	 * this node does not know what other node state is. */
+	if (node->heartbeat_gap > max_heartbeat_gap
+	    || (node->is_time_initialized () && ((now - node->last_recv_hbtime) > calc_score_interval)))
+	  {
+	    if (node->state == node_state::MASTER)
+	      {
+		MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "master crashed or is not responding");
+	      }
+
+	    node->reset ();
+	  }
+
+	switch (node->state)
+	  {
+	  case node_state::MASTER:
+	  case node_state::TO_BE_SLAVE:
+	    node->score = node->priority | HB_NODE_SCORE_MASTER;
+	    break;
+	  case node_state::TO_BE_MASTER:
+	    node->score = node->priority | HB_NODE_SCORE_TO_BE_MASTER;
+	    break;
+	  case node_state::SLAVE:
+	    node->score = node->priority | HB_NODE_SCORE_SLAVE;
+	    break;
+	  case node_state::REPLICA:
+	  case node_state::UNKNOWN:
+	  default:
+	    node->score = node->priority | HB_NODE_SCORE_UNKNOWN;
+	    break;
+	  }
+
+	if (node->score < min_score)
+	  {
+	    master = node;
+	    min_score = node->score;
+	  }
+	if (node->score < (short) HB_NODE_SCORE_TO_BE_MASTER)
+	  {
+	    num_master++;
+	  }
+      }
+
+    return num_master;
+  }
+
   void
   cluster::receive_heartbeat (const heartbeat_arg &arg, ipv4_type from_ip)
   {
@@ -506,7 +579,7 @@ namespace cubhb
   void
   cluster::send_heartbeat_to_all ()
   {
-    if (myself == NULL)
+    if (myself == NULL || shutdown)
       {
 	// if myself is NULL then cluster is not healthy
 	return;
@@ -590,11 +663,12 @@ namespace cubhb
 
     if (node->state == node_state::MASTER && node->state != (node_state) arg.get_state ())
       {
+	MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "master stopped gracefully");
 	is_state_changed = true;
       }
 
     node->state = (node_state) arg.get_state ();
-    node->heartbeat_gap = std::max (0, (node->heartbeat_gap - 1));
+    node->heartbeat_gap = std::max (0, node->heartbeat_gap - 1);
     node->last_recv_hbtime = std::chrono::system_clock::now ();
 
     return is_state_changed;

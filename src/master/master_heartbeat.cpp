@@ -102,8 +102,6 @@ static void hb_cluster_job_demote (HB_JOB_ARG *arg);
 
 static bool hb_cluster_is_isolated (void);
 
-static int hb_cluster_calc_score (void);
-
 /* cluster jobs queue */
 static HB_JOB_ENTRY *hb_cluster_job_dequeue (void);
 static int hb_cluster_job_queue (unsigned int job_type, HB_JOB_ARG *arg, unsigned int msec);
@@ -686,7 +684,7 @@ hb_cluster_job_calc_score (HB_JOB_ARG *arg)
 
   rv = pthread_mutex_lock (&hb_Cluster->lock);
 
-  num_master = hb_cluster_calc_score ();
+  num_master = hb_Cluster->calculate_nodes_score ();
   hb_Cluster->is_isolated = hb_cluster_is_isolated ();
 
   if (hb_Cluster->state == cubhb::node_state::REPLICA || hb_Cluster->hide_to_demote)
@@ -972,7 +970,7 @@ hb_cluster_job_failover (HB_JOB_ARG *arg)
 
   pthread_mutex_lock (&hb_Cluster->lock);
 
-  hb_cluster_calc_score ();
+  hb_Cluster->calculate_nodes_score ();
 
   if (hb_Cluster->master && hb_Cluster->myself && hb_Cluster->master->priority == hb_Cluster->myself->priority)
     {
@@ -1267,83 +1265,6 @@ check_end:
   error = hb_cluster_job_queue (HB_CJOB_CHECK_VALID_PING_SERVER, NULL, check_interval);
 
   assert (error == NO_ERROR);
-}
-
-/*
- * cluster common
- */
-
-/*
- * hb_cluster_calc_score() -
- *   return: number of master nodes in heartbeat cluster
- */
-static int
-hb_cluster_calc_score (void)
-{
-  int num_master = 0;
-  short min_score = HB_NODE_SCORE_UNKNOWN;
-
-  if (hb_Cluster == NULL)
-    {
-      MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "hb_Cluster is null. \n");
-      return ER_FAILED;
-    }
-
-  hb_Cluster->myself->state = hb_Cluster->state;
-
-  std::chrono::milliseconds calc_score_interval (prm_get_integer_value (PRM_ID_HA_CALC_SCORE_INTERVAL_IN_MSECS));
-  std::chrono::system_clock::time_point now = std::chrono::system_clock::now ();
-
-  for (cubhb::node_entry *node : hb_Cluster->nodes)
-    {
-      /* If this node does not receive heartbeat message over than prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP)
-       * times, (or sufficient time has been elapsed from the last received heartbeat message time), this node does not
-       * know what other node state is. */
-      if (node->heartbeat_gap > prm_get_integer_value (PRM_ID_HA_MAX_HEARTBEAT_GAP)
-	  || (node->is_time_initialized () && ((now - node->last_recv_hbtime) > calc_score_interval)))
-	{
-	  if (node->state == cubhb::node_state::MASTER)
-	    {
-	      MASTER_ER_LOG_DEBUG (ARG_FILE_LINE, "master crashed");
-	    }
-
-	  node->heartbeat_gap = 0;
-	  node->state = cubhb::node_state::UNKNOWN;
-	  node->last_recv_hbtime = std::chrono::system_clock::time_point ();
-	}
-
-      switch (node->state)
-	{
-	case cubhb::node_state::MASTER:
-	case cubhb::node_state::TO_BE_SLAVE:
-	  node->score = node->priority | HB_NODE_SCORE_MASTER;
-	  break;
-	case cubhb::node_state::TO_BE_MASTER:
-	  node->score = node->priority | HB_NODE_SCORE_TO_BE_MASTER;
-	  break;
-	case cubhb::node_state::SLAVE:
-	  node->score = node->priority | HB_NODE_SCORE_SLAVE;
-	  break;
-	case cubhb::node_state::REPLICA:
-	case cubhb::node_state::UNKNOWN:
-	default:
-	  node->score = node->priority | HB_NODE_SCORE_UNKNOWN;
-	  break;
-	}
-
-      if (node->score < min_score)
-	{
-	  hb_Cluster->master = node;
-	  min_score = node->score;
-	}
-
-      if (node->score < (short) HB_NODE_SCORE_TO_BE_MASTER)
-	{
-	  num_master++;
-	}
-    }
-
-  return num_master;
 }
 
 /*
