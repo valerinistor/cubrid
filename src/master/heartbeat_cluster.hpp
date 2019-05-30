@@ -27,6 +27,7 @@
 #include "hostname.hpp"
 #include "system_parameter.h"
 #include "udp_rpc.hpp"
+#include "raft.hpp"
 
 #include <chrono>
 #include <list>
@@ -219,6 +220,9 @@ namespace cubhb
 
       std::string m_group_id;
       cubbase::hostname_type m_hostname;
+
+      // raft
+      raft *m_raft;
   };
 
 } // namespace cubhb

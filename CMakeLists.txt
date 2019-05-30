@@ -1125,6 +1125,12 @@ endif()
 list(APPEND EP_INCLUDES ${LIBLZO_INCLUDES})
 list(APPEND EP_LIBS ${LIBLZO_LIBS})
 
+set(LIBRAFT_LIBS "/home/blackie/projects/raft/raft/libraft.a")
+set(LIBRAFT_INCLUDES "/home/blackie/projects/raft/raft/include")
+
+list(APPEND EP_INCLUDES ${LIBRAFT_INCLUDES})
+list(APPEND EP_LIBS ${LIBRAFT_LIBS})
+
 # WITH_LIBGPG_ERROR can have multiple values with different meanings
 # on Linux:
 # * "EXTERNAL" - (default) builds gpg-error library from URL stored in ${WITH_LIBGPG_ERROR_URL} uses the library created by the build

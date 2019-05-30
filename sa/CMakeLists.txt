@@ -26,7 +26,7 @@ set(EXECUTABLE_SOURCES
   ${EXECUTABLES_DIR}/csql_result.c
   ${EXECUTABLES_DIR}/csql_support.c
   ${EXECUTABLES_DIR}/csql_result_format.c
-  ${EXECUTABLES_DIR}/extract_schema.cpp  
+  ${EXECUTABLES_DIR}/extract_schema.cpp
   ${EXECUTABLES_DIR}/util_sa.c
   ${EXECUTABLES_DIR}/util_cs.c
   ${EXECUTABLES_DIR}/util_common.c
@@ -295,10 +295,10 @@ set (REPLICATION_HEADERS
 set(REPLICATION_SOURCES
   ${REPLICATION_DIR}/log_consumer.cpp
   ${REPLICATION_DIR}/log_generator.cpp
-  ${REPLICATION_DIR}/replication_db_copy.cpp  
+  ${REPLICATION_DIR}/replication_db_copy.cpp
   ${REPLICATION_DIR}/replication_object.cpp
   ${REPLICATION_DIR}/replication_master_node.cpp
-  ${REPLICATION_DIR}/replication_master_senders_manager.cpp  
+  ${REPLICATION_DIR}/replication_master_senders_manager.cpp
   ${REPLICATION_DIR}/replication_node.cpp
   ${REPLICATION_DIR}/replication_schema_extract.cpp
   ${REPLICATION_DIR}/replication_slave_node.cpp
@@ -317,7 +317,7 @@ set (STREAM_HEADERS
   ${BASE_DIR}/cubstream.hpp
   ${BASE_DIR}/multi_thread_stream.hpp
   ${BASE_DIR}/stream_entry.hpp
-  ${BASE_DIR}/stream_file.hpp  
+  ${BASE_DIR}/stream_file.hpp
   )
 
 set(JSP_SOURCES
@@ -515,7 +515,7 @@ SET_SOURCE_FILES_PROPERTIES(
   ${QUERY_SOURCES}
   ${OBJECT_SOURCES}
   ${REPLICATION_SOURCES}
-  ${STREAM_SOURCES}  
+  ${STREAM_SOURCES}
   ${JSP_SOURCES}
   ${THREAD_SOURCES}
   ${TRANSACTION_SOURCES}
@@ -565,7 +565,7 @@ add_library(cubridsa SHARED
   ${PROBES_OBJECT}
   ${REPLICATION_HEADERS}
   ${REPLICATION_SOURCES}
-  ${STREAM_HEADERS}  
+  ${STREAM_HEADERS}
   ${STREAM_SOURCES}
   ${THREAD_SOURCES}
   ${TRANSACTION_HEADERS}
@@ -620,6 +620,7 @@ target_external_dependencies(cubridsa
 target_include_directories(cubridsa PRIVATE
   ${CMAKE_SOURCE_DIR}/src/heaplayers/util  # this looks ugly
   ${JAVA_INC}
+  ${LIBRAFT_INCLUDES}
   )
 target_link_libraries(cubridsa LINK_PRIVATE
     cas

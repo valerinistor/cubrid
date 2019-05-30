@@ -94,6 +94,8 @@ add_executable(cub_master ${CUB_MASTER_SOURCES})
 target_compile_definitions(cub_master PRIVATE ${COMMON_DEFS})
 target_include_directories(cub_master PRIVATE ${EP_INCLUDES})
 target_link_libraries(cub_master LINK_PRIVATE cubridcs)
+target_link_libraries(cub_master LINK_PRIVATE ${LIBRAFT_LIBS})
+
 if(WIN32)
   target_link_libraries(cub_master LINK_PRIVATE ws2_32)
 endif(WIN32)

@@ -119,6 +119,7 @@ namespace cubhb
     , m_hb_service (new heartbeat_service (*server, *this))
     , m_group_id ()
     , m_hostname ()
+    , m_raft (new raft ())
   {
     pthread_mutex_init (&lock, NULL);
   }
@@ -139,6 +140,7 @@ namespace cubhb
     , m_hb_service (other.m_hb_service)
     , m_group_id (other.m_group_id)
     , m_hostname (other.m_hostname)
+    , m_raft (other.m_raft)
   {
     memcpy (&lock, &other.lock, sizeof (pthread_mutex_t));
   }
@@ -167,6 +169,7 @@ namespace cubhb
     m_hb_service = other.m_hb_service;
     m_group_id = other.m_group_id;
     m_hostname = other.m_hostname;
+    m_raft = other.m_raft;
 
     return *this;
   }
@@ -256,6 +259,7 @@ namespace cubhb
 
     delete m_hb_service;
     delete m_server;
+    delete m_raft;
 
     pthread_mutex_destroy (&lock);
   }
@@ -315,6 +319,7 @@ namespace cubhb
     // set these pointers to NULL because this and copy instances share same pointers
     copy.m_server = NULL;
     copy.m_hb_service = NULL;
+    copy.m_raft = NULL;
 
     return NO_ERROR;
   }
