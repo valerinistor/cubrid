@@ -135,8 +135,6 @@ namespace cubreplication
       }
 
     changed_attrs_row_repl_entry *entry = NULL;
-    char *class_name = NULL;
-
     for (auto &repl_obj : m_pending_to_be_added)
       {
 	if (repl_obj->compare_inst_oid (inst_oid))
@@ -153,8 +151,6 @@ namespace cubreplication
     else
       {
 	LOG_LSA *p_lsa;
-	int error_code = NO_ERROR;
-
 	char *class_name = get_classname (class_oid);
 
 	cubthread::entry *thread_p = &cubthread::get_entry ();
@@ -183,7 +179,9 @@ namespace cubreplication
       {
 	if ((*repl_obj)->compare_inst_oid (inst_oid))
 	  {
-	    (void) m_pending_to_be_added.erase (repl_obj);
+	    changed_attrs_row_repl_entry *entry = *repl_obj;
+	    (void) m_pending_to_be_added.erase (repl_obj--);
+	    delete entry;
 	    break;
 	  }
       }
@@ -221,7 +219,7 @@ namespace cubreplication
 	    er_log_repl_obj (repl_obj, "log_generator::set_key_to_repl_object");
 
 	    // remove
-	    (void) m_pending_to_be_added.erase (repl_obj_it);
+	    (void) m_pending_to_be_added.erase (repl_obj_it--);
 
 	    found = true;
 
@@ -323,11 +321,14 @@ namespace cubreplication
   }
 
   void
-  log_generator::pack_group_commit_entry (void)
+  log_generator::pack_group_commit_entry (cubstream::stream_position &stream_start_pos,
+					  cubstream::stream_position &stream_end_pos)
   {
     /* use non-NULL MVCCID to prevent assertion fail on stream packer */
     static stream_entry gc_stream_entry (s_stream, MVCCID_FIRST, stream_entry_header::GROUP_COMMIT);
     gc_stream_entry.pack ();
+    stream_start_pos = gc_stream_entry.get_stream_entry_start_position ();
+    stream_end_pos = gc_stream_entry.get_stream_entry_end_position ();
   }
 
   void
@@ -385,9 +386,12 @@ namespace cubreplication
 
     set_tran_repl_info (state);
     pack_stream_entry ();
+
     /* TODO[replication] : force a group commit :
      * move this to log_manager group commit when multi-threaded apply is enabled */
-    pack_group_commit_entry ();
+    cubstream::stream_position sp1;
+    cubstream::stream_position sp2;    
+    pack_group_commit_entry (sp1, sp2);
   }
 
   void

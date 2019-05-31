@@ -18,44 +18,48 @@
  */
 
 /*
- * replication_node.cpp
+ * replication_schema_extract.hpp
  */
 
-#ident "$Id$"
+#ifndef _REPLICATION_SCHEMA_EXTRACT_HPP_
+#define _REPLICATION_SCHEMA_EXTRACT_HPP_
 
-#include "replication_node.hpp"
-#include "multi_thread_stream.hpp"
-#include "boot_sr.h"        /* database full name */
-#include "error_code.h"
-#include "file_io.h"        /* file name manipulation */
-#include "stream_file.hpp"
+#include "printer.hpp"
 
 namespace cubreplication
 {
-  replication_node::~replication_node ()
+
+  class net_print_output : public print_output
   {
-    // stream and stream file are interdependent, therefore first stop the stream
-    m_stream->set_stop ();
+    private:
+      int m_buffer_type;
+      size_t m_flush_size;
+      int m_send_error_cnt;
 
-    delete m_stream_file;
-    m_stream_file = NULL;
-    delete m_stream;
-    m_stream = NULL;
-  }
+    public:
+      const static size_t DEFAULT_FLUSH_SIZE = 4096;
 
-  int replication_node::apply_start_position (void)
-  {
-    /* TODO set m_start_position from recovery log ? */
-    return NO_ERROR;
-  }
+      net_print_output () = delete;
+      net_print_output (const int buffer_type, const size_t flush_size = DEFAULT_FLUSH_SIZE);
+      ~net_print_output () {}
 
-  void replication_node::get_replication_file_path (std::string &path)
-  {
-    char buf_temp_path[PATH_MAX];
-    char *temp_path;
+      int flush (void);
 
-    temp_path = fileio_get_directory_path (buf_temp_path, boot_db_full_name ());
-    path.assign (temp_path);
-  }
+      int send_to_network ();
+
+      void set_buffer_type (const int buffer_type)
+      {
+	m_buffer_type = buffer_type;
+      }
+
+      int get_error_count ()
+      {
+	return m_send_error_cnt;
+      }
+  };
 
 } /* namespace cubreplication */
+
+extern int replication_schema_extract (const char *program_name);
+
+#endif /* _REPLICATION_SCHEMA_EXTRACT_HPP_ */
