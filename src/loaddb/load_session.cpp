@@ -26,9 +26,9 @@
 #include "load_driver.hpp"
 #include "load_server_loader.hpp"
 #include "load_worker_manager.hpp"
-#include "resource_shared_pool.hpp"
 #include "xserver_interface.h"
 
+#include <list>
 #include <sstream>
 
 namespace cubload
@@ -159,8 +159,8 @@ namespace cubload
 	// We don't need anything from the driver anymore.
 	driver->clear ();
 
-	m_session.push_commit (m_batch.get_id (), thread_ref.tran_index, line_no, lines_inserted,
-			       m_batch.get_class_id ());
+	m_session.register_commit (m_batch.get_id (), thread_ref.tran_index, line_no, lines_inserted,
+				   m_batch.get_class_id ());
 
 	if (m_session.is_failed () || (!is_syntax_check_only && (!parser_result || er_has_error ())))
 	  {
@@ -170,7 +170,7 @@ namespace cubload
 	  }
 	else
 	  {
-	    m_session.commit (thread_ref, m_batch.get_id ());
+	    m_session.commit (thread_ref);
 	  }
 
 	// notify session that batch is done
@@ -186,6 +186,7 @@ namespace cubload
   session::session (load_args &args)
     : m_commit_mutex ()
     , m_commit_cond_var ()
+    , m_commit_in_progess (false)
     , m_commit_map ()
     , m_args (args)
     , m_last_batch_id {NULL_BATCH_ID}
@@ -285,43 +286,63 @@ namespace cubload
   }
 
   void
-  session::push_commit (batch_id b_id, int tran_index, int batch_line_no, int batch_rows, class_id cls_id)
+  session::register_commit (batch_id b_id, int tran_index, int batch_line_no, int batch_rows, class_id cls_id)
   {
     std::unique_lock<std::mutex> ulock (m_commit_mutex);
-    m_commit_map.insert (std::make_pair (b_id, commit_entry (tran_index, batch_line_no, batch_rows, cls_id)));
+    m_commit_map.insert (std::make_pair (b_id, commit_entry (b_id, tran_index, batch_line_no, batch_rows, cls_id)));
   }
 
   void
-  session::commit (cubthread::entry &thread_ref, batch_id batch_id_)
+  session::commit (cubthread::entry &thread_ref)
   {
     std::unique_lock<std::mutex> ulock (m_commit_mutex);
-    if (batch_id_ != (m_last_batch_id + 1))
+    if (m_commit_map.empty () || m_commit_in_progess)
       {
 	return;
       }
 
-    int save_tran_index = thread_ref.tran_index;
-    for (auto it = m_commit_map.begin (); it != m_commit_map.end (); )
+    // find consecutive commit entries starting from m_last_batch_id+1 until first gap
+    // a gap means that a batch id is not registered. e.g. [1, 2, 4] -> there is a gap, 3 is missing
+    std::list<commit_entry> commit_entries;
+    for (auto it = m_commit_map.find (m_last_batch_id + 1); it != m_commit_map.end (); )
       {
-	if (it->first != (m_last_batch_id + 1) && m_last_batch_id != NULL_BATCH_ID)
+	if (it->first != (m_last_batch_id + 1))
 	  {
 	    // there is a gap
 	    break;
 	  }
 
-	thread_ref.tran_index = it->second.m_tran_index;
-	xtran_server_commit (&thread_ref, false);
-
+	// save commit entries into a local structure so lock can be released
 	m_last_batch_id = it->first;
+	commit_entries.emplace_back (it->second);
+
+	// delete commit entry from shared structure
+	it = m_commit_map.erase (it);
+      }
+
+    // if list is not empty then mark that commit is in progress
+    m_commit_in_progess = !commit_entries.empty ();
+
+    // lock can be released
+    ulock.unlock ();
+
+    // commit collected commit entries
+    int save_tran_index = thread_ref.tran_index;
+    for (const commit_entry &c_entry : commit_entries)
+      {
+	thread_ref.tran_index = c_entry.m_tran_index;
+	xtran_server_commit (&thread_ref, false);
 
 	// free transaction index
 	logtb_free_tran_index (&thread_ref, thread_ref.tran_index);
 
-	post_commit (it->second);
-
-	it = m_commit_map.erase (it);
+	post_commit (c_entry);
       }
     thread_ref.tran_index = save_tran_index;
+
+    // advance with the last committed batch id
+    ulock.lock ();
+    m_commit_in_progess = false;
   }
 
   void

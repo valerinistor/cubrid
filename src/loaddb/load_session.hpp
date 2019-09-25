@@ -115,8 +115,8 @@ namespace cubload
 
       void interrupt ();
 
-      void push_commit (batch_id b_id, int tran_index, int batch_line_no, int batch_rows, class_id cls_id);
-      void commit (cubthread::entry &thread_ref, batch_id b_id);
+      void register_commit (batch_id b_id, int tran_index, int batch_line_no, int batch_rows, class_id cls_id);
+      void commit (cubthread::entry &thread_ref);
       void abort (cubthread::entry &thread_ref);
 
       void fetch_stats (stats &stats_);
@@ -136,14 +136,19 @@ namespace cubload
     private:
       struct commit_entry
       {
-	commit_entry (int tran_index, int batch_line_no, int batch_rows, class_id cls_id)
-	  : m_tran_index (tran_index)
+	commit_entry (batch_id b_id, int tran_index, int batch_line_no, int batch_rows, class_id cls_id)
+	  : m_batch_id (b_id)
+	  , m_tran_index (tran_index)
 	  , m_batch_line_no (batch_line_no)
 	  , m_batch_rows (batch_rows)
 	  , m_class_id (cls_id)
 	{
 	}
 
+	commit_entry (const commit_entry &other) = default;
+	commit_entry &operator= (const commit_entry &other) = default;
+
+	batch_id m_batch_id;
 	int m_tran_index;
 	int m_batch_line_no;
 	int m_batch_rows;
@@ -159,7 +164,7 @@ namespace cubload
 
       std::mutex m_commit_mutex;
       std::condition_variable m_commit_cond_var;
-
+      bool m_commit_in_progess;
       std::map<batch_id, commit_entry> m_commit_map;
 
       load_args m_args;
